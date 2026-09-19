@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Battleship vs. Jev</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <div>
+        <h1>Battleship <span class="vs">vs.</span> Jev</h1>
+        <p class="subtitle">
+          Benchmarking TypeSafe's System One model as a Battleship player, through Vercel AI Gateway.
+        </p>
+      </div>
+      <div class="status" id="client-status" role="status"></div>
+    </header>
+
+    <main>
+      <section class="panel controls" aria-label="Game setup">
+        <div class="field">
+          <label for="strategy">Strategy</label>
+          <select id="strategy"></select>
+          <p class="hint" id="strategy-hint"></p>
+        </div>
+
+        <div class="field" id="representation-field">
+          <label for="representation">Board representation</label>
+          <select id="representation"></select>
+          <p class="hint" id="representation-hint"></p>
+        </div>
+
+        <div class="field">
+          <label for="seed">Layout seed</label>
+          <input id="seed" type="number" value="1" min="0" step="1" />
+          <p class="hint">Same seed means the same fleet layout, so runs are comparable.</p>
+        </div>
+
+        <div class="field checkbox">
+          <label><input id="mock" type="checkbox" /> Mock mode</label>
+          <p class="hint">
+            Answers from code-side density instead of the model. Useful without an API key;
+            never a benchmark result.
+          </p>
+        </div>
+
+        <div class="buttons">
+          <button id="new-game" class="primary">New game</button>
+          <button id="step" disabled>Fire one shot</button>
+          <button id="auto" disabled>Auto-play</button>
+        </div>
+
+        <p class="error" id="error" role="alert" hidden></p>
+      </section>
+
+      <section class="panel board-panel" aria-label="Board">
+        <div class="board-wrap">
+          <div class="board" id="board" role="grid" aria-label="Game board"></div>
+        </div>
+        <div class="legend">
+          <span><i class="swatch unknown"></i> not fired at</span>
+          <span><i class="swatch miss"></i> miss</span>
+          <span><i class="swatch hit"></i> hit</span>
+          <span><i class="swatch sunk"></i> sunk</span>
+          <span class="heat-note"><i class="swatch heat"></i> shading shows the model's probability</span>
+        </div>
+      </section>
+
+      <section class="panel metrics" aria-label="Metrics">
+        <h2>Metrics</h2>
+        <dl class="metric-grid">
+          <div><dt>Shots</dt><dd id="m-shots">0</dd></div>
+          <div><dt>Hits</dt><dd id="m-hits">0</dd></div>
+          <div><dt>Accuracy</dt><dd id="m-accuracy">0%</dd></div>
+          <div><dt>Ships left</dt><dd id="m-ships">5</dd></div>
+          <div><dt>Last shot</dt><dd id="m-latency">-</dd></div>
+          <div><dt>Total time</dt><dd id="m-total-latency">-</dd></div>
+          <div><dt>Input tokens</dt><dd id="m-tokens">-</dd></div>
+          <div><dt>Confidence</dt><dd id="m-confidence">-</dd></div>
+        </dl>
+        <p class="hint" id="m-model">-</p>
+        <p class="hint latency-note">
+          Latency is measured end to end through the Gateway, so it includes Gateway overhead.
+        </p>
+
+        <h2>Shot log</h2>
+        <ol class="log" id="log"></ol>
+      </section>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
