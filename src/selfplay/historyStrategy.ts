@@ -114,7 +114,8 @@ export class HistoryAwareStrategy implements Strategy {
     const coords = offered.map((c) => c.coord);
     const { coord, fellBack } = chooseCellFromAnswer(answer, coords, view, rng, this.temperature);
 
-    // Show the code-side ranking when the model returned no distribution.
+    // Show the history-weighted code ranking when the model returned no distribution.
+    const modelHeatmap = heatmapFromChoice(answer, view);
     const fallbackHeatmap = normalizeHeatmap(
       view.cells.map((row, r) =>
         row.map((_, c) => ranked.find((x) => x.coord.row === r && x.coord.col === c)?.weight ?? 0),
@@ -123,7 +124,8 @@ export class HistoryAwareStrategy implements Strategy {
 
     return {
       coord,
-      heatmap: heatmapFromChoice(answer, view) ?? fallbackHeatmap,
+      heatmap: modelHeatmap ?? fallbackHeatmap,
+      heatmapSource: modelHeatmap ? 'model' : 'code-density',
       ...decisionMetadata(response, 'target'),
       notes: fellBack
         ? `model returned "${answer.choice}", not a legal target; fell back`

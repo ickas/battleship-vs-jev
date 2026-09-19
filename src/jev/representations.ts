@@ -118,17 +118,22 @@ export const semanticRepresentation: BoardRepresentation = {
     const live = unresolvedHits(view);
     const liveLabels = live.map(coordToLabel);
 
+    const base = {
+      ...fleetSummary(view),
+      shotsTaken: view.history.length,
+      cellsHitButNotYetSunk: liveLabels.length > 0 ? liveLabels : 'none',
+    };
+
+    // With no candidates to describe, this is board context only. Callers that
+    // already put the descriptions in `criteria` pass an empty list, so the
+    // same text is never sent twice in one request.
+    if (candidates.length === 0) return base;
+
     const descriptions: Record<string, string> = {};
     for (const coord of candidates) {
       descriptions[coordToLabel(coord)] = describeCell(view, coord);
     }
-
-    return {
-      ...fleetSummary(view),
-      shotsTaken: view.history.length,
-      cellsHitButNotYetSunk: liveLabels.length > 0 ? liveLabels : 'none',
-      candidates: descriptions,
-    };
+    return { ...base, candidates: descriptions };
   },
 };
 

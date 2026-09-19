@@ -2,7 +2,8 @@ import { coordToLabel, labelToCoord } from '../engine/coords.js';
 import { sampleFromWeights, type Rng } from '../engine/rng.js';
 import type { BoardView, Coord } from '../engine/types.js';
 import type { ChoiceAnswer, JevResponse } from '../jev/types.js';
-import { emptyHeatmap, type Heatmap } from './types.js';
+import { computeDensity } from '../engine/density.js';
+import { emptyHeatmap, normalizeHeatmap, type Heatmap } from './types.js';
 
 /**
  * Turns Jev's per-option probabilities into a board heatmap. Options are cell
@@ -81,6 +82,17 @@ export function chooseCellFromAnswer(
     if (best) return { coord: best, fellBack: true };
   }
   return { coord: candidates[0]!, fellBack: true };
+}
+
+/**
+ * Heatmap to show when the model returned no distribution at all.
+ *
+ * `probabilities` is optional in the AI SDK's types and is genuinely absent in
+ * some responses, so the UI would otherwise render nothing. This falls back to
+ * the code-side density, which is clearly labelled as such by the caller.
+ */
+export function densityFallbackHeatmap(view: BoardView): Heatmap {
+  return normalizeHeatmap(computeDensity(view).weights);
 }
 
 /** Pulls the usage/confidence/model fields a ShotDecision records. */

@@ -78,6 +78,7 @@ export class GameSession {
       outcome,
       latencyMs,
       heatmap: decision.heatmap,
+      heatmapSource: decision.heatmapSource,
       confidence: decision.confidence,
       notes: decision.notes,
       usage: decision.usage,
@@ -120,6 +121,7 @@ export class GameSession {
         inputTokens: r.usage?.inputTokens,
       })),
       heatmap: this.records.at(-1)?.heatmap,
+      heatmapSource: this.records.at(-1)?.heatmapSource,
       // Revealed only once the game is over, so the UI cannot leak the answer.
       fleet: this.isOver ? this.board.fleet : undefined,
     };

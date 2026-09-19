@@ -12,6 +12,12 @@ export interface ShotDecision {
    * per-option probabilities.
    */
   heatmap?: Heatmap;
+  /**
+   * Where `heatmap` came from. 'model' means Jev's own per-option
+   * probabilities; 'code-density' means the model returned no distribution and
+   * the code-side ranking is being shown instead.
+   */
+  heatmapSource?: 'model' | 'code-density';
   /** Model-reported confidence, when the decision came from Jev. */
   confidence?: number;
   /** Free-form detail for the metrics panel and logs. */

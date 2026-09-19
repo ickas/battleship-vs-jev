@@ -13,6 +13,7 @@ export interface ShotRecord {
   /** Wall-clock time for the strategy's decision, in milliseconds. */
   latencyMs: number;
   heatmap?: Heatmap;
+  heatmapSource?: 'model' | 'code-density';
   confidence?: number;
   notes?: string;
   /** Token usage for this shot, when the decision came from a model. */
@@ -81,6 +82,7 @@ export async function playGame(options: PlayOptions): Promise<GameResult> {
       outcome,
       latencyMs,
       heatmap: decision.heatmap,
+      heatmapSource: decision.heatmapSource,
       confidence: decision.confidence,
       notes: decision.notes,
       usage: decision.usage,

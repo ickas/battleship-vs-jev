@@ -4,7 +4,12 @@ import type { Rng } from '../engine/rng.js';
 import type { BoardView } from '../engine/types.js';
 import { describeCell, getRepresentation, type BoardRepresentation } from '../jev/representations.js';
 import type { ChoiceAnswer, JevClient } from '../jev/types.js';
-import { chooseCellFromAnswer, decisionMetadata, heatmapFromChoice } from './jevShared.js';
+import {
+  chooseCellFromAnswer,
+  decisionMetadata,
+  densityFallbackHeatmap,
+  heatmapFromChoice,
+} from './jevShared.js';
 import type { ShotDecision, Strategy } from './types.js';
 import { untriedCells } from './untried.js';
 
@@ -66,7 +71,9 @@ export class JevHybridStrategy implements Strategy {
 
     const response = await this.client.ask({
       label: 'jevHybrid.nextShot',
-      state: this.representation.describe(view, offered),
+      // Board context only: the per-cell descriptions are already in `criteria`,
+      // and repeating them would double the tokens for no added information.
+      state: this.representation.describe(view, []),
       questions: {
         target: {
           type: 'choice',
@@ -80,9 +87,12 @@ export class JevHybridStrategy implements Strategy {
     const answer = response.answers.target as ChoiceAnswer;
     const { coord, fellBack } = chooseCellFromAnswer(answer, offered, view, rng, this.temperature);
 
+    const modelHeatmap = heatmapFromChoice(answer, view);
+
     return {
       coord,
-      heatmap: heatmapFromChoice(answer, view),
+      heatmap: modelHeatmap ?? densityFallbackHeatmap(view),
+      heatmapSource: modelHeatmap ? 'model' : 'code-density',
       ...decisionMetadata(response, 'target'),
       notes: fellBack
         ? `model returned "${answer.choice}", which was not a legal target; fell back`

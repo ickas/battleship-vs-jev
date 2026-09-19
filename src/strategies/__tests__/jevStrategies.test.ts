@@ -85,14 +85,39 @@ describe('JevPureStrategy', () => {
     expect(decision.notes).toMatch(/fell back/);
   });
 
-  it('copes with a response carrying no probabilities', async () => {
+  it('falls back to the code-side density when no probabilities are returned', async () => {
     const client = new ScriptedClient(() => choiceReply('E5'));
     const strategy = new JevPureStrategy({ client });
     const view = new Board(config, randomFleet(config, makeRng(1))).view();
 
     const decision = await strategy.nextShot(view, makeRng(1));
     expect(decision.coord).toEqual({ row: 4, col: 4 });
-    expect(decision.heatmap).toBeUndefined();
+    // A heatmap is still shown, but it is labelled as not being the model's.
+    expect(decision.heatmap).toBeDefined();
+    expect(decision.heatmapSource).toBe('code-density');
+    expect(Math.max(...decision.heatmap!.flat())).toBeCloseTo(1, 10);
+  });
+
+  it('labels a heatmap built from real probabilities as coming from the model', async () => {
+    const client = new ScriptedClient(() => choiceReply('A1', { A1: 0.6, B1: 0.4 }));
+    const strategy = new JevPureStrategy({ client });
+    const view = new Board(config, randomFleet(config, makeRng(1))).view();
+
+    const decision = await strategy.nextShot(view, makeRng(1));
+    expect(decision.heatmapSource).toBe('model');
+  });
+
+  it('defaults to a representation carrying no code-side analysis', async () => {
+    const client = new ScriptedClient(() => choiceReply('A1'));
+    const strategy = new JevPureStrategy({ client });
+    const view = new Board(config, randomFleet(config, makeRng(1))).view();
+    await strategy.nextShot(view, makeRng(1));
+
+    // cellList states only what each cell's status is, never a judgement
+    // about it, so the headline number measures the model, not the code.
+    const state = JSON.stringify(client.lastRequest!.state);
+    expect(state).toContain('not yet fired at');
+    expect(state).not.toMatch(/continues|room for the longest|borders empty water/);
   });
 
   it('skips the model call when only one cell remains', async () => {
@@ -145,6 +170,26 @@ describe('JevHybridStrategy', () => {
     for (const description of Object.values(criteria)) {
       expect(description).toMatch(/board|water|ship|hit|space/);
     }
+  });
+
+  it('does not repeat the candidate descriptions in the state', async () => {
+    const client = new ScriptedClient((request) => {
+      const criteria = (request.questions.target as { criteria: Record<string, string> }).criteria;
+      return choiceReply(Object.keys(criteria)[0]!);
+    });
+    const strategy = new JevHybridStrategy({ client, topK: 6 });
+    const view = new Board(config, randomFleet(config, makeRng(2))).view();
+    await strategy.nextShot(view, makeRng(2));
+
+    const criteria = (client.lastRequest!.questions.target as { criteria: Record<string, string> })
+      .criteria;
+    const state = JSON.stringify(client.lastRequest!.state);
+    // Descriptions belong in criteria only; repeating them doubles the tokens
+    // for no extra information, against the "send only what is needed" rule.
+    for (const description of Object.values(criteria)) {
+      expect(state).not.toContain(description);
+    }
+    expect(state).not.toContain('candidates');
   });
 });
 

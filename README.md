@@ -20,8 +20,8 @@ Five strategies play the same seeded fleet layouts:
 | `random` | no | Uniform random among untried cells. The floor. |
 | `huntTarget` | no | Classic parity search, then works outwards from hits. |
 | `density` | no | Counts valid remaining-ship placements per cell. The strongest code player. |
-| `jevPure` | yes | One Choice over every untried cell. Code supplies only the rules. |
-| `jevHybrid` | yes | Code ranks the top K cells; Jev only compares those. |
+| `jevPure` | yes | One Choice over every untried cell, with raw board state. Code supplies only the rules. |
+| `jevHybrid` | yes | Code ranks the top K cells and describes them; Jev only compares those. |
 
 The headline number is **mean shots to sink the fleet** — lower is better. 17 is
 perfect, 100 is the worst possible.
@@ -136,7 +136,8 @@ Two places where the shipped SDK types are stricter than the prose docs, and the
 follows the types:
 
 - `probabilities` is **optional** on choice and score answers. Nothing here assumes a
-  heatmap is available; the UI falls back to the code-side ranking when it is absent.
+  heatmap is available: when it is absent the UI shows the code-side density instead
+  and says so, rather than silently presenting code output as the model's belief.
 - `rounding` is `{ probabilityDecimals?, scoreDecimals? }`, not a number. Live responses
   report `{ probabilityDecimals: 2, scoreDecimals: 2 }`, so the heatmap's real
   granularity is 0.01.
@@ -164,6 +165,23 @@ row back to a specific call in the Gateway logs.
 
 Confidence is reported for `choice` and `score` only. A boolean-only request returns
 `confidence: {}`.
+
+### What each strategy actually measures
+
+`jevPure` defaults to the `cellList` representation — raw per-cell status, no
+interpretation — so its score reflects the model deciding from board state alone.
+Running it with `--representation semantic` is supported and is how Phase 0 compares
+encodings, but that representation feeds the model code-computed judgements such as
+"continues a line of two hits". A run configured that way is a representation
+experiment, not a measure of the model playing unaided.
+
+`jevHybrid` is explicitly a collaboration: the density code picks the shortlist, so
+its score belongs to the pair, not to the model. It is the interesting number for
+"can Jev add anything on top of good code?", and `density` is the baseline it has to
+beat to claim it does.
+
+The UI labels every heatmap with its source, so a code-side fallback is never read as
+Jev's own probabilities.
 
 ## Honesty notes
 

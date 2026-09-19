@@ -70,6 +70,25 @@ function render(game) {
   state.game = game;
   const { cells, heatmap, config } = game;
 
+  /*
+   * Rescale the heatmap against its own maximum over cells that are still
+   * unknown. Code strategies already emit max-normalized weights, but Jev
+   * returns a true distribution over every option: across ~100 cells the top
+   * probability is often around 0.01, which would shade to nothing. Rescaling
+   * preserves the relative ordering, which is what the heatmap is for, while
+   * the raw values stay in the shot log.
+   */
+  let heatMax = 0;
+  if (heatmap) {
+    for (let row = 0; row < config.rows; row++) {
+      for (let col = 0; col < config.cols; col++) {
+        if (cells[row][col] === 'unknown' && heatmap[row][col] > heatMax) {
+          heatMax = heatmap[row][col];
+        }
+      }
+    }
+  }
+
   // Highlight the most recent shot.
   const last = game.history.at(-1);
   const lastCoord = last
@@ -89,13 +108,16 @@ function render(game) {
       node.className = `cell ${value === 'unknown' ? '' : value}`.trim();
 
       // Heat shading only where nothing is known yet.
-      const heat = value === 'unknown' && heatmap ? heatmap[row][col] : 0;
+      const heat = value === 'unknown' && heatmap && heatMax > 0 ? heatmap[row][col] / heatMax : 0;
       if (heat > 0) {
         node.dataset.heat = 'true';
         node.style.setProperty('--heat-alpha', String(Math.min(heat, 1) * 0.85));
+        const raw = heatmap[row][col];
+        node.title = `${LETTERS[col]}${row + 1}: ${(raw * 100).toFixed(raw < 0.01 ? 2 : 1)}%`;
       } else {
         delete node.dataset.heat;
         node.style.removeProperty('--heat-alpha');
+        node.removeAttribute('title');
       }
 
       if (value === 'unknown' && shipCells.has(`${row}-${col}`)) {
@@ -126,6 +148,17 @@ function render(game) {
   el('m-model').textContent = game.modelIds.length
     ? `Model: ${game.modelIds.join(', ')}`
     : 'Model: not a model call';
+
+  const heatLabel = el('heat-source');
+  if (heatLabel) {
+    heatLabel.textContent = !heatmap
+      ? 'No heatmap for this shot.'
+      : game.heatmapSource === 'code-density'
+        ? 'Shading is the code-side density: the model returned no distribution.'
+        : game.heatmapSource === 'model'
+          ? "Shading is Jev's own per-option probabilities, rescaled to the strongest cell."
+          : 'Shading is the code-side probability density.';
+  }
 
   renderLog(game.history);
 
@@ -193,8 +226,11 @@ async function newGame() {
 
 async function step() {
   if (!state.game || state.game.isOver) return false;
+  const gameId = state.game.id;
   try {
-    const game = await api(`/api/games/${state.game.id}/shot`, { method: 'POST' });
+    const game = await api(`/api/games/${gameId}/shot`, { method: 'POST' });
+    // A slow shot can land after "New game" replaced the session; drop it.
+    if (state.game?.id !== gameId) return false;
     render(game);
     return !game.isOver;
   } catch (error) {
