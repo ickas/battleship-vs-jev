@@ -28,7 +28,7 @@ perfect, 100 is the worst possible.
 
 ## Requirements
 
-- Node 20 or later (developed on Node 26)
+- Node 20.12 or later, for `process.loadEnvFile` (developed on Node 26)
 - An `AI_GATEWAY_API_KEY` from [Vercel AI Gateway](https://vercel.com/docs/ai-gateway),
   for the Jev strategies only. Everything else runs without one.
 
@@ -37,10 +37,17 @@ npm install
 cp .env.example .env   # then paste your key into .env
 ```
 
+`.env.local` is read first if present, then `.env`. Variables already exported in the
+environment always win over both.
+
+Note the free tier rate-limits this model hard enough to fail a long run. All three
+runners pace requests (`--minIntervalMs`, default 1500) and retry a 429 with backoff.
+See [docs/representation.md](docs/representation.md#the-free-tier-will-not-sustain-this-benchmark).
+
 ## Running it
 
 ```bash
-npm test                 # 119 unit tests, no network
+npm test                 # 180 unit tests, no network
 npm start                # web UI at http://localhost:3000
 npm run bench -- --games 20
 npm run repr -- --positions 24
@@ -57,7 +64,9 @@ the output says so, and every mock response is tagged `mock-not-a-model`.
 npm run bench -- --games 20 --strategies density,jevHybrid --representation semantic
 ```
 
-All strategies face identical layouts, so the comparison is paired. Results are
+All strategies face identical layouts, so the comparison is paired. If a strategy
+loses games to errors the report says so explicitly and the table is flagged as not
+paired, rather than quietly comparing means over different layout sets. Results are
 written to `results/` as JSON and CSV.
 
 ```
