@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DirectJevClient } from '../jev/direct.js';
 import { GatewayJevClient } from '../jev/gateway.js';
 import { MockJevClient } from '../jev/mock.js';
 import type { JevClient } from '../jev/types.js';
@@ -25,16 +26,44 @@ const UI_DIR = fileURLToPath(new URL('../ui/', import.meta.url));
 const PORT = Number(process.env.PORT ?? 3000);
 const MAX_BODY_BYTES = 1_000_000;
 
-const hasApiKey = Boolean(process.env.AI_GATEWAY_API_KEY);
-const liveClient: JevClient | undefined = hasApiKey
-  ? new GatewayJevClient({
-      // The UI fires one shot at a time, but the free tier rate-limits this
-      // model, so pace and wait out a 429 rather than failing the shot.
-      minIntervalMs: Number(process.env.JEV_MIN_INTERVAL_MS ?? 1200),
-      rateLimitRetries: 4,
-      maxLogEntries: 200,
-    })
-  : undefined;
+/**
+ * Transport selection. The direct TypeSafe API is preferred when a key is
+ * present: it is markedly faster than the Gateway, reports the model version
+ * that actually answered, and is not subject to the Gateway free tier's rate
+ * limit. The Gateway is used when only that key is configured.
+ */
+function createLiveClient(): { client: JevClient; transport: 'direct' | 'gateway' } | undefined {
+  if (process.env.TYPESAFE_API_KEY) {
+    return {
+      transport: 'direct',
+      client: new DirectJevClient({
+        maxLogEntries: 200,
+        ...(process.env.TYPESAFE_DEFAULT_MODEL
+          ? { model: process.env.TYPESAFE_DEFAULT_MODEL }
+          : {}),
+      }),
+    };
+  }
+
+  if (process.env.AI_GATEWAY_API_KEY) {
+    return {
+      transport: 'gateway',
+      client: new GatewayJevClient({
+        // The Gateway free tier rate-limits this model, so pace and wait out a
+        // 429 rather than failing the shot.
+        minIntervalMs: Number(process.env.JEV_MIN_INTERVAL_MS ?? 1200),
+        rateLimitRetries: 4,
+        maxLogEntries: 200,
+      }),
+    };
+  }
+
+  return undefined;
+}
+
+const live = createLiveClient();
+const liveClient = live?.client;
+const hasApiKey = live !== undefined;
 const mockClient = new MockJevClient({ latencyMs: 120 });
 
 const sessions = new Map<string, GameSession>();
@@ -94,8 +123,9 @@ function pickClient(strategyId: string, useMock: boolean): JevClient {
   if (useMock) return mockClient;
   if (!liveClient) {
     throw new Error(
-      'AI_GATEWAY_API_KEY is not set on the server, so Jev strategies cannot run. ' +
-        'Set it and restart, or enable mock mode (results will not be real).',
+      'No Jev credentials on the server, so Jev strategies cannot run. Set TYPESAFE_API_KEY ' +
+        '(preferred) or AI_GATEWAY_API_KEY and restart, or enable mock mode (results will ' +
+        'not be real).',
     );
   }
   return liveClient;
@@ -114,6 +144,7 @@ const server = createServer(async (req, res) => {
           description: r.description,
         })),
         liveClientAvailable: hasApiKey,
+        transport: live?.transport ?? 'none',
         defaultConfig: makeConfig(),
       });
       return;
@@ -234,9 +265,13 @@ if (isEntryPoint) {
   server.listen(PORT, () => {
     console.log(`Battleship vs. Jev running at http://localhost:${PORT}`);
     console.log(
-      hasApiKey
-        ? 'AI_GATEWAY_API_KEY found: Jev strategies will make live Gateway calls.'
-        : 'AI_GATEWAY_API_KEY not set: Jev strategies are unavailable. Code baselines and mock mode still work.',
+      live?.transport === 'direct'
+        ? `TypeSafe API key found: Jev strategies call TypeSafe directly${
+            process.env.TYPESAFE_DEFAULT_MODEL ? ` (model ${process.env.TYPESAFE_DEFAULT_MODEL})` : ''
+          }.`
+        : live?.transport === 'gateway'
+          ? 'AI Gateway key found: Jev strategies will make live Gateway calls.'
+          : 'No Jev credentials: Jev strategies are unavailable. Code baselines and mock mode still work.',
     );
   });
 }

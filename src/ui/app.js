@@ -498,12 +498,24 @@ async function init() {
 
   const status = el('client-status');
   if (state.config.liveClientAvailable) {
-    status.textContent = 'Gateway key present: Jev strategies are live';
+    status.textContent =
+      state.config.transport === 'direct'
+        ? 'Live: TypeSafe API (direct)'
+        : 'Live: Vercel AI Gateway';
     status.classList.add('live');
   } else {
-    status.textContent = 'No AI_GATEWAY_API_KEY: Jev strategies unavailable';
+    status.textContent = 'No API key: Jev strategies unavailable';
     status.classList.add('offline');
     el('mock').checked = true;
+  }
+
+  const subtitle = document.querySelector('.subtitle');
+  if (subtitle) {
+    subtitle.textContent = state.config.liveClientAvailable
+      ? state.config.transport === 'direct'
+        ? "Benchmarking TypeSafe's System One model as a Battleship player, called directly."
+        : "Benchmarking TypeSafe's System One model as a Battleship player, through Vercel AI Gateway."
+      : "Benchmarking TypeSafe's System One model as a Battleship player.";
   }
 
   syncStrategyHints();

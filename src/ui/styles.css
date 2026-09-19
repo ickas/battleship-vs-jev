@@ -46,11 +46,42 @@ h1 { margin: 0; font-size: 24px; letter-spacing: -0.01em; }
 .status.live { color: #6fd08c; border-color: #2c5c3c; }
 .status.offline { color: #e0b94a; border-color: #5c4a1e; }
 
+/*
+ * Three columns: controls, the board with its metrics underneath, and the shot
+ * log beside the board. The board and the log share grid row 1, so the log
+ * stretches to exactly the board's height; metrics sit in row 2 under the board.
+ */
 main {
   display: grid;
   grid-template-columns: minmax(240px, 300px) minmax(320px, 1fr) minmax(260px, 340px);
+  grid-template-rows: auto auto;
   gap: 16px;
   align-items: start;
+}
+
+.controls { grid-column: 1; grid-row: 1 / span 2; }
+.board-panel { grid-column: 2; grid-row: 1; }
+.metrics { grid-column: 2; grid-row: 2; }
+
+.log-panel {
+  grid-column: 3;
+  grid-row: 1;
+  /* Stretch to the row height, which the board defines. */
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/*
+ * The log is taken out of flow inside this box, so a long log cannot grow the
+ * grid row past the board's height. The box takes whatever height is left in
+ * the panel and the list scrolls within it.
+ */
+.log-scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 120px;
 }
 
 .panel {
@@ -194,7 +225,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 10px;
   margin: 0;
 }
@@ -213,10 +244,14 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 260px;
+  position: absolute;
+  inset: 0;
   overflow-y: auto;
   font-size: 13px;
 }
+
+.empty-log { margin-top: 0; }
+.log:not(:empty) + .empty-log { display: none; }
 .log li {
   display: flex;
   gap: 8px;
@@ -234,5 +269,13 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .log .meta { margin-left: auto; color: var(--ink-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 1000px) {
-  main { grid-template-columns: 1fr; }
+  main { grid-template-columns: 1fr; grid-template-rows: none; }
+  .controls, .board-panel, .metrics, .log-panel {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  .log-panel { align-self: auto; }
+  /* Stacked on narrow screens, so let the list flow normally again. */
+  .log-scroll { position: static; min-height: 0; }
+  .log { position: static; max-height: 260px; }
 }

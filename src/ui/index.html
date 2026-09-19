@@ -87,6 +87,14 @@
         </div>
       </section>
 
+      <section class="panel log-panel" aria-label="Shot log">
+        <h2>Shot log</h2>
+        <div class="log-scroll">
+          <ol class="log" id="log"></ol>
+          <p class="hint empty-log" id="log-empty">No shots yet.</p>
+        </div>
+      </section>
+
       <section class="panel metrics" aria-label="Metrics">
         <h2>Metrics</h2>
         <dl class="metric-grid">
@@ -102,12 +110,10 @@
         <p class="hint" id="m-model">-</p>
         <p class="hint" id="heat-source"></p>
         <p class="hint latency-note">
-          Latency is measured end to end through the Gateway, so it includes Gateway overhead.
+          Latency is measured end to end by the client, so it includes transport overhead.
         </p>
-
-        <h2>Shot log</h2>
-        <ol class="log" id="log"></ol>
       </section>
+
     </main>
 
     <script type="module" src="app.js"></script>
