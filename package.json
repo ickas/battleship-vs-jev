@@ -14,7 +14,8 @@
     "bench": "tsx src/bench/cli.ts",
     "repr": "tsx src/bench/representation.ts",
     "dev": "tsx watch src/server/index.ts",
-    "start": "tsx src/server/index.ts"
+    "start": "tsx src/server/index.ts",
+    "selfplay": "tsx src/bench/selfplay.ts"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^4.0.87",
