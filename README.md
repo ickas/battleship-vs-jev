@@ -173,6 +173,7 @@ http://localhost:3000/?strategy=jevHybrid&representation=semantic&layout=adversa
 | `representation` | `cellList`, `rowStrings`, `semantic` (dropped for code-only strategies) |
 | `layout` | `random`, `edge`, `centre`, `adversarial`, `manual` |
 | `seed` | any integer; the same seed gives the same fleet |
+| `palette` | `sequential` (default), `traffic` |
 
 Changing a control rewrites the URL in place, and "Copy link" puts it on the
 clipboard.
@@ -318,6 +319,30 @@ beat to claim it does.
 
 The UI labels every heatmap with its source, so a code-side fallback is never read as
 Jev's own probabilities.
+
+### Reading the heatmap
+
+The overlay covers only the cells the model was actually asked about, which for
+`jevHybrid` is exactly the shortlist (16 by default) and for `jevPure` is every
+untried cell. The scale beneath the board says how many cells were rated and how
+strong the strongest was.
+
+Probability is a magnitude, so the default ramp is **one hue in six discrete steps**,
+dark to light. It is ordered by lightness, which keeps it readable in greyscale and
+with any colour vision, and discrete bands separate cells far better than a
+continuous fade, where low values vanish. Validated against this surface with the
+data-viz palette validator.
+
+A `traffic` palette (green to red) is available via the selector or the URL, because
+the convention reads as an instruction rather than a quantity. It is **not** the
+default: its lightness is not ordered, it spans 117 degrees of hue, and green-to-red
+is the hardest pairing for the ~8% of men with red-green colour blindness. Its
+high-probability red also sits close to the colour used for a hit.
+
+`jevPure` reveals a limitation worth knowing: Jev rounds probabilities to two
+decimals, so spread across ~90 options most cells round to zero and only a handful
+ever carry a value. `jevHybrid`'s shortlist concentrates the distribution, so its
+heatmap is far more informative.
 
 ## Honesty notes
 

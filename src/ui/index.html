@@ -61,6 +61,15 @@
           </div>
         </div>
 
+        <div class="field">
+          <label for="palette">Heatmap colours</label>
+          <select id="palette">
+            <option value="sequential">Sequential (one hue)</option>
+            <option value="traffic">Traffic light (green to red)</option>
+          </select>
+          <p class="hint" id="palette-hint"></p>
+        </div>
+
         <div class="buttons">
           <button id="new-game" class="primary">New game</button>
           <button id="step" disabled>Fire one shot</button>
@@ -84,7 +93,18 @@
           <span><i class="swatch miss"></i> miss</span>
           <span><i class="swatch hit"></i> hit</span>
           <span><i class="swatch sunk"></i> sunk</span>
-          <span class="heat-note"><i class="swatch heat"></i> shading shows the model's probability</span>
+        </div>
+
+        <div class="scale" id="scale" hidden>
+          <div class="scale-head">
+            <span>less likely</span>
+            <span id="scale-title">model probability</span>
+            <span>more likely</span>
+          </div>
+          <div class="scale-bands">
+            <i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+          <p class="scale-note" id="scale-note"></p>
         </div>
       </section>
 

@@ -8,8 +8,41 @@
   --miss: #33465c;
   --hit: #e0603a;
   --sunk: #8b2f1c;
-  --heat: 77, 163, 255;
   --radius: 10px;
+
+  /*
+   * Heatmap bands. Probability is a magnitude, so the default is one hue
+   * stepped light to dark - here inverted for a dark surface, so near-zero
+   * recedes into the board and the strongest cell is brightest. Six discrete
+   * bands read far more clearly on a 10x10 grid than a continuous alpha fade,
+   * where low values vanish.
+   *
+   * Validated with the data-viz palette validator against this surface:
+   * monotone lightness, visible step gaps, single hue (4 degrees), light end
+   * clears the surface.
+   */
+  --band-1: #184f95;
+  --band-2: #256abf;
+  --band-3: #3987e5;
+  --band-4: #6da7ec;
+  --band-5: #9ec5f4;
+  --band-6: #cde2fb;
+}
+
+/*
+ * Traffic-light alternative. Deliberately NOT the default: lightness is not
+ * monotone across it and it spans 117 degrees of hue, so it fails as a
+ * magnitude ramp and is the worst case for red-green colour blindness (~8% of
+ * men). Offered because the green-to-red convention reads as an instruction
+ * rather than a quantity, which some people prefer for a decision aid.
+ */
+:root[data-palette='traffic'] {
+  --band-1: #0ca30c;
+  --band-2: #4fae06;
+  --band-3: #a8b500;
+  --band-4: #fab219;
+  --band-5: #ec835a;
+  --band-6: #d03b3b;
 }
 
 * { box-sizing: border-box; }
@@ -219,8 +252,15 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   border: 1px solid #1c2735;
   color: transparent;
 }
-/* Heatmap shading sits under the state colours. */
-.cell[data-heat] { background: rgba(var(--heat), var(--heat-alpha, 0)); }
+/* Heatmap bands sit under the state colours; only unknown cells get one. */
+.cell[data-band='1'] { background: var(--band-1); }
+.cell[data-band='2'] { background: var(--band-2); }
+.cell[data-band='3'] { background: var(--band-3); }
+.cell[data-band='4'] { background: var(--band-4); }
+.cell[data-band='5'] { background: var(--band-5); }
+.cell[data-band='6'] { background: var(--band-6); }
+/* The top band is where the shot is going, so mark it beyond colour alone. */
+.cell[data-band='6'] { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55); }
 .cell.miss { background: var(--miss); color: #9fb3c8; }
 .cell.hit { background: var(--hit); color: #2b0d05; font-weight: 700; }
 .cell.sunk { background: var(--sunk); color: #f4d5cd; font-weight: 700; }
@@ -248,7 +288,30 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .swatch.miss { background: var(--miss); }
 .swatch.hit { background: var(--hit); }
 .swatch.sunk { background: var(--sunk); }
-.swatch.heat { background: rgba(var(--heat), 0.75); }
+.swatch.heat { background: var(--band-5); }
+
+/* Heatmap scale, shown only while a heatmap is on the board. */
+.scale { margin-top: 12px; }
+.scale-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--ink-dim);
+  margin-bottom: 4px;
+}
+.scale-bands { display: flex; gap: 2px; }
+.scale-bands i {
+  flex: 1 1 0;
+  height: 10px;
+  border-radius: 2px;
+}
+.scale-bands i:nth-child(1) { background: var(--band-1); }
+.scale-bands i:nth-child(2) { background: var(--band-2); }
+.scale-bands i:nth-child(3) { background: var(--band-3); }
+.scale-bands i:nth-child(4) { background: var(--band-4); }
+.scale-bands i:nth-child(5) { background: var(--band-5); }
+.scale-bands i:nth-child(6) { background: var(--band-6); }
+.scale-note { margin-top: 5px; font-size: 11px; color: var(--ink-dim); }
 
 .metric-grid {
   display: grid;

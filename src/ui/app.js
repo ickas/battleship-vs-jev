@@ -12,7 +12,10 @@ const el = (id) => document.getElementById(id);
  * (JEV_MOCK) because it changes what the numbers mean rather than what is being
  * measured, and a link that quietly disables the model would be a trap.
  */
-const URL_KEYS = ['strategy', 'representation', 'layout', 'seed', 'topK', 'temperature'];
+const URL_KEYS = ['strategy', 'representation', 'layout', 'seed', 'topK', 'temperature', 'palette'];
+
+/** Discrete heatmap bands. Six reads clearly on a 10x10 grid. */
+const BANDS = 6;
 
 /** Keeps very small figures legible rather than rounding them to zero. */
 function formatUsd(amount) {
@@ -37,6 +40,8 @@ function writeUrlState() {
   const params = new URLSearchParams();
   params.set('strategy', el('strategy').value);
   params.set('layout', el('layout-mode').value);
+  const palette = el('palette')?.value;
+  if (palette && palette !== 'sequential') params.set('palette', palette);
 
   // Only include what actually applies to the current selection.
   const usesModel = strategyUsesModel(el('strategy').value);
@@ -215,7 +220,7 @@ function handlePlacementClick(row, col) {
   renderPlacement();
 }
 
-function setLayoutMode(mode) {
+function setLayoutMode(mode, { startGame = true } = {}) {
   const manual = mode === 'manual';
   const family = state.config.layoutFamilies?.find((f) => f.id === mode);
   el('layout-hint').textContent = manual
@@ -237,7 +242,8 @@ function setLayoutMode(mode) {
     state.game = null;
   } else {
     el('new-game').disabled = false;
-    newGame();
+    // On first load init starts the game itself, so don't start a second one.
+    if (startGame) newGame();
   }
 }
 
@@ -316,12 +322,13 @@ function render(game) {
    * the raw values stay in the shot log.
    */
   let heatMax = 0;
+  let ratedCells = 0;
   if (heatmap) {
     for (let row = 0; row < config.rows; row++) {
       for (let col = 0; col < config.cols; col++) {
-        if (cells[row][col] === 'unknown' && heatmap[row][col] > heatMax) {
-          heatMax = heatmap[row][col];
-        }
+        if (cells[row][col] !== 'unknown') continue;
+        if (heatmap[row][col] > heatMax) heatMax = heatmap[row][col];
+        if (heatmap[row][col] > 0) ratedCells++;
       }
     }
   }
@@ -344,16 +351,17 @@ function render(game) {
       const value = cells[row][col];
       node.className = `cell ${value === 'unknown' ? '' : value}`.trim();
 
-      // Heat shading only where nothing is known yet.
+      // Only unknown cells the model actually rated get a band.
       const heat = value === 'unknown' && heatmap && heatMax > 0 ? heatmap[row][col] / heatMax : 0;
       if (heat > 0) {
-        node.dataset.heat = 'true';
-        node.style.setProperty('--heat-alpha', String(Math.min(heat, 1) * 0.85));
+        // Six bands by share of the strongest cell. Absolute probabilities are
+        // tiny when many options are offered, so banding relative to the
+        // maximum is what makes the ordering visible.
+        node.dataset.band = String(Math.max(1, Math.min(BANDS, Math.ceil(heat * BANDS))));
         const raw = heatmap[row][col];
         node.title = `${LETTERS[col]}${row + 1}: ${(raw * 100).toFixed(raw < 0.01 ? 2 : 1)}%`;
       } else {
-        delete node.dataset.heat;
-        node.style.removeProperty('--heat-alpha');
+        delete node.dataset.band;
         node.removeAttribute('title');
       }
 
@@ -397,6 +405,21 @@ function render(game) {
   el('m-model').textContent = game.modelIds.length
     ? `Model: ${game.modelIds.join(', ')}`
     : 'Model: not a model call';
+
+  // The scale, and how many cells it actually covers.
+  const scale = el('scale');
+  if (scale) {
+    scale.hidden = !heatmap || heatMax <= 0;
+    if (!scale.hidden) {
+      const isModel = game.heatmapSource === 'model';
+      el('scale-title').textContent = isModel ? "Jev's probability" : 'code-side density';
+      el('scale-note').textContent = isModel
+        ? `${ratedCells} cell${ratedCells === 1 ? '' : 's'} rated by the model this shot; ` +
+          `strongest ${(heatMax * 100).toFixed(heatMax < 0.01 ? 2 : 1)}%. ` +
+          'Cells it was not asked about, or that rounded to zero, are unshaded.'
+        : `${ratedCells} cells ranked by the density code; the model returned no distribution.`;
+    }
+  }
 
   const heatLabel = el('heat-source');
   if (heatLabel) {
@@ -522,6 +545,18 @@ async function toggleAuto() {
   el('auto').textContent = 'Auto-play';
 }
 
+/** Switches the heatmap ramp. Sequential is the default and the validated one. */
+function setPalette(value) {
+  document.documentElement.dataset.palette = value;
+  const hint = el('palette-hint');
+  if (!hint) return;
+  hint.textContent =
+    value === 'traffic'
+      ? 'Green to red. Reads as an instruction, but its lightness is not ordered and it is hard to read with red-green colour blindness.'
+      : 'One hue, dark to light. Ordered by lightness, so it stays readable in greyscale and with any colour vision.';
+  writeUrlState();
+}
+
 function syncStrategyHints() {
   const strategyId = el('strategy').value;
   const usesModel = strategyUsesModel(strategyId);
@@ -588,6 +623,9 @@ async function init() {
   if (fromUrl.layout && [...layoutSelect.options].some((o) => o.value === fromUrl.layout)) {
     layoutSelect.value = fromUrl.layout;
   }
+  if (el('palette') && (fromUrl.palette === 'traffic' || fromUrl.palette === 'sequential')) {
+    el('palette').value = fromUrl.palette;
+  }
   if (fromUrl.seed !== undefined && Number.isFinite(Number(fromUrl.seed))) {
     el('seed').value = String(Math.max(0, Math.trunc(Number(fromUrl.seed))));
   }
@@ -621,9 +659,11 @@ async function init() {
   }
 
   syncStrategyHints();
-  setLayoutMode(layoutSelect.value);
+  setPalette(el('palette')?.value ?? 'sequential');
+  setLayoutMode(layoutSelect.value, { startGame: false });
   strategySelect.addEventListener('change', syncStrategyHints);
   representationSelect.addEventListener('change', syncStrategyHints);
+  el('palette')?.addEventListener('change', (event) => setPalette(event.target.value));
   el('layout-mode').addEventListener('change', (event) => setLayoutMode(event.target.value));
   el('seed').addEventListener('change', writeUrlState);
   el('copy-link').addEventListener('click', async () => {
