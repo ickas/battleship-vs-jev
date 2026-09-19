@@ -57,7 +57,7 @@ export class HistoryAwareStrategy implements Strategy {
     this.client = options.client;
     this.history = options.history;
     this.useHistory = options.useHistory;
-    this.topK = options.topK ?? 8;
+    this.topK = options.topK ?? 16;
     this.temperature = options.temperature ?? 0.7;
     this.historyWeight = options.historyWeight ?? 1;
     this.id = options.useHistory ? 'jevHistory' : 'jevNoHistory';

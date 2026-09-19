@@ -21,7 +21,7 @@ Five strategies play the same seeded fleet layouts:
 | `huntTarget` | no | Classic parity search, then works outwards from hits. |
 | `density` | no | Counts valid remaining-ship placements per cell. The strongest code player. |
 | `jevPure` | yes | One Choice over every untried cell, with raw board state. Code supplies only the rules. |
-| `jevHybrid` | yes | Code ranks the top K cells and describes them; Jev only compares those. |
+| `jevHybrid` | yes | Code ranks the top K cells (default 16) and describes them; Jev compares those. |
 
 The headline number is **mean shots to sink the fleet** — lower is better. 17 is
 perfect, 100 is the worst possible.
@@ -292,6 +292,24 @@ Running it with `--representation semantic` is supported and is how Phase 0 comp
 encodings, but that representation feeds the model code-computed judgements such as
 "continues a line of two hits". A run configured that way is a representation
 experiment, not a measure of the model playing unaided.
+
+The shortlist size matters more than it looks. When a ship is hit but not sunk, the
+cells that could complete it form a frontier of up to `longest - 1` cells in each of
+four directions, and the measured mean is 9.9 cells
+(`npx tsx scripts/measure-frontier-coverage.mts`):
+
+| topK | frontier cells offered | positions with the whole frontier offered |
+| --- | --- | --- |
+| 4 | 37.7% | 15.5% |
+| 8 | 65.1% | 37.5% |
+| **16** | **90.3%** | **70.8%** |
+| 24 | 96.6% | 82.8% |
+
+At topK 8 the code hides a third of the plausible cells, and offers the complete
+frontier only 37% of the time - so it, not the model, is making most of the decision.
+The default is therefore 16. Measured scores at 4, 8, 16 and 24 are *not*
+distinguishable at small sample sizes, so this is a choice about not hobbling the
+model rather than a demonstrated gain; larger values cost proportionally more tokens.
 
 `jevHybrid` is explicitly a collaboration: the density code picks the shortlist, so
 its score belongs to the pair, not to the model. It is the interesting number for

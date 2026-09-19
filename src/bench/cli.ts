@@ -68,7 +68,7 @@ function parseArgs(argv: string[]): Args {
     strategies,
     seed: Number(flags.get('seed') ?? 1),
     representation: flags.get('representation') ?? 'semantic',
-    topK: Number(flags.get('topK') ?? 8),
+    topK: Number(flags.get('topK') ?? 16),
     temperature: Number(flags.get('temperature') ?? 0),
     transport: parseTransport(flags),
     out: flags.get('out') ?? 'results',

@@ -15,7 +15,22 @@ import { untriedCells } from './untried.js';
 
 export interface JevHybridOptions {
   client: JevClient;
-  /** How many code-ranked candidates to offer. Small keeps state focused. */
+  /**
+   * How many code-ranked candidates to offer. Defaults to 16.
+   *
+   * The floor is set by coverage, not by score. When a ship is hit but not
+   * sunk, the cells that could complete it form a frontier of up to
+   * `longest - 1` cells in each of four directions - 16 for a 5-long carrier -
+   * and the measured mean frontier is 9.9 cells
+   * (`scripts/measure-frontier-coverage.mts`). At topK 8 the shortlist contains
+   * only 65% of those cells and the whole frontier just 37% of the time, so
+   * code is silently deciding for the model most of the time. 16 raises that to
+   * 90% and 71%.
+   *
+   * Measured scores at 4, 8, 16 and 24 are not distinguishable at small sample
+   * sizes, so this is a decision about not hobbling the model rather than a
+   * demonstrated improvement. Larger values cost proportionally more tokens.
+   */
   topK?: number;
   representation?: BoardRepresentation | string;
   temperature?: number;
@@ -41,7 +56,7 @@ export class JevHybridStrategy implements Strategy {
 
   constructor(options: JevHybridOptions) {
     this.client = options.client;
-    this.topK = options.topK ?? 8;
+    this.topK = options.topK ?? 16;
     this.representation =
       typeof options.representation === 'string'
         ? getRepresentation(options.representation)

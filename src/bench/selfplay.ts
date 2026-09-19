@@ -45,7 +45,7 @@ async function main(): Promise<void> {
     client,
     games,
     seed: Number(flag('seed', '1')),
-    topK: Number(flag('topK', '8')),
+    topK: Number(flag('topK', '16')),
     temperature: Number(flag('temperature', '0.7')),
     jevPlacement: !argv.includes('--randomPlacement'),
     onGame: (index, result, progress) => {
