@@ -11,6 +11,9 @@ probabilities as a live heatmap.
 The goal is an honest benchmark first. A strong player is secondary — the code-only
 baselines are here precisely so the model's performance can be read against something.
 
+The write-up of what this found, and what it does not establish, is at
+[ickas.dev](https://ickas.dev/writing/benchmarking-jev-battleship).
+
 ## What it measures
 
 Five strategies play the same seeded fleet layouts:
@@ -84,7 +87,7 @@ See [docs/representation.md](docs/representation.md#the-free-tier-will-not-susta
 ## Running it
 
 ```bash
-npm test                 # 180 unit tests, no network
+npm test                 # 228 unit tests, no network
 npm start                # web UI at http://localhost:3000
 npm run bench -- --games 20
 npm run repr -- --positions 24
@@ -219,7 +222,8 @@ Surrounding whitespace and quotes in `.env` are ignored.
 
 ```
 src/
-  engine/      board, fleet, placement validation, shot resolution, density, game loop
+  engine/      board, fleet, placement validation, shot resolution, density,
+               layout families, game loop
   jev/         JevClient - the ONLY place that talks to Jev
     gateway      AI SDK experimental_evaluate through Vercel AI Gateway
     direct       TypeSafe API via @typesafe-ai/sdk; reports the real model version
@@ -231,6 +235,7 @@ src/
   bench/       headless runners for all three phases
   server/      holds the API key; the browser never sees it
   ui/          board view, live heatmap, metrics panel
+scripts/       one-off measurements whose results are quoted in the docs
 ```
 
 Two rules shape the whole design:

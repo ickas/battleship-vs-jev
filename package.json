@@ -1,9 +1,15 @@
 {
   "name": "battleship-vs-jev",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "description": "Battleship benchmark for Jev, TypeSafe's System One evaluation model, via Vercel AI Gateway.",
+  "license": "MIT",
+  "author": "Henrique Macedo (https://ickas.dev)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ickas/battleship-vs-jev.git"
+  },
+  "homepage": "https://ickas.dev/writing/benchmarking-jev-battleship",
   "engines": {
     "node": ">=20.12"
   },
