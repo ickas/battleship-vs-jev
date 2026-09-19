@@ -12,7 +12,7 @@ const el = (id) => document.getElementById(id);
  * (JEV_MOCK) because it changes what the numbers mean rather than what is being
  * measured, and a link that quietly disables the model would be a trap.
  */
-const URL_KEYS = ['strategy', 'representation', 'layout', 'seed', 'topK', 'temperature', 'palette'];
+const URL_KEYS = ['strategy', 'representation', 'layout', 'seed', 'topK', 'temperature'];
 
 /** Discrete heatmap bands. Six reads clearly on a 10x10 grid. */
 const BANDS = 6;
@@ -40,8 +40,6 @@ function writeUrlState() {
   const params = new URLSearchParams();
   params.set('strategy', el('strategy').value);
   params.set('layout', el('layout-mode').value);
-  const palette = el('palette')?.value;
-  if (palette && palette !== 'sequential') params.set('palette', palette);
 
   // Only include what actually applies to the current selection.
   const usesModel = strategyUsesModel(el('strategy').value);
@@ -545,18 +543,6 @@ async function toggleAuto() {
   el('auto').textContent = 'Auto-play';
 }
 
-/** Switches the heatmap ramp. Sequential is the default and the validated one. */
-function setPalette(value) {
-  document.documentElement.dataset.palette = value;
-  const hint = el('palette-hint');
-  if (!hint) return;
-  hint.textContent =
-    value === 'traffic'
-      ? 'Green to red. Reads as an instruction, but its lightness is not ordered and it is hard to read with red-green colour blindness.'
-      : 'One hue, dark to light. Ordered by lightness, so it stays readable in greyscale and with any colour vision.';
-  writeUrlState();
-}
-
 function syncStrategyHints() {
   const strategyId = el('strategy').value;
   const usesModel = strategyUsesModel(strategyId);
@@ -623,9 +609,6 @@ async function init() {
   if (fromUrl.layout && [...layoutSelect.options].some((o) => o.value === fromUrl.layout)) {
     layoutSelect.value = fromUrl.layout;
   }
-  if (el('palette') && (fromUrl.palette === 'traffic' || fromUrl.palette === 'sequential')) {
-    el('palette').value = fromUrl.palette;
-  }
   if (fromUrl.seed !== undefined && Number.isFinite(Number(fromUrl.seed))) {
     el('seed').value = String(Math.max(0, Math.trunc(Number(fromUrl.seed))));
   }
@@ -659,11 +642,9 @@ async function init() {
   }
 
   syncStrategyHints();
-  setPalette(el('palette')?.value ?? 'sequential');
   setLayoutMode(layoutSelect.value, { startGame: false });
   strategySelect.addEventListener('change', syncStrategyHints);
   representationSelect.addEventListener('change', syncStrategyHints);
-  el('palette')?.addEventListener('change', (event) => setPalette(event.target.value));
   el('layout-mode').addEventListener('change', (event) => setLayoutMode(event.target.value));
   el('seed').addEventListener('change', writeUrlState);
   el('copy-link').addEventListener('click', async () => {

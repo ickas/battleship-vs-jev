@@ -19,7 +19,8 @@
    *
    * Validated with the data-viz palette validator against this surface:
    * monotone lightness, visible step gaps, single hue (4 degrees), light end
-   * clears the surface.
+   * clears the surface. Being ordered by lightness, it stays readable in
+   * greyscale and with any colour vision.
    */
   --band-1: #184f95;
   --band-2: #256abf;
@@ -27,22 +28,6 @@
   --band-4: #6da7ec;
   --band-5: #9ec5f4;
   --band-6: #cde2fb;
-}
-
-/*
- * Traffic-light alternative. Deliberately NOT the default: lightness is not
- * monotone across it and it spans 117 degrees of hue, so it fails as a
- * magnitude ramp and is the worst case for red-green colour blindness (~8% of
- * men). Offered because the green-to-red convention reads as an instruction
- * rather than a quantity, which some people prefer for a decision aid.
- */
-:root[data-palette='traffic'] {
-  --band-1: #0ca30c;
-  --band-2: #4fae06;
-  --band-3: #a8b500;
-  --band-4: #fab219;
-  --band-5: #ec835a;
-  --band-6: #d03b3b;
 }
 
 * { box-sizing: border-box; }
