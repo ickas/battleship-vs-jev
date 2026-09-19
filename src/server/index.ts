@@ -11,6 +11,9 @@ import { validateFleet } from '../engine/placement.js';
 import { makeConfig } from '../engine/config.js';
 import type { PlacedShip } from '../engine/types.js';
 import { GameSession } from './gameSession.js';
+import { loadEnv } from '../env.js';
+
+loadEnv();
 
 /**
  * Minimal server for the UI. It holds AI_GATEWAY_API_KEY and makes every Jev

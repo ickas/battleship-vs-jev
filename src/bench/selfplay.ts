@@ -3,6 +3,9 @@ import { join } from 'node:path';
 import { makeConfig } from '../engine/config.js';
 import { historyEffect, runSelfPlay } from '../selfplay/runner.js';
 import { buildClient } from './strategies.js';
+import { loadEnv } from '../env.js';
+
+loadEnv();
 
 /**
  * Phase 2 runner: Jev vs. Jev, one player using opponent history and one not.

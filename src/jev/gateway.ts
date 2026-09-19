@@ -1,4 +1,5 @@
 import { experimental_evaluate as evaluate } from 'ai';
+import { createGateway } from '@ai-sdk/gateway';
 import type {
   JevAnswer,
   JevCallLog,
@@ -31,6 +32,12 @@ export const JEV_LIMITS = {
 
 export interface GatewayJevClientOptions {
   model?: string;
+  /**
+   * Gateway API key. Defaults to AI_GATEWAY_API_KEY, read when the client is
+   * constructed rather than at import time, so loading a .env file first works.
+   * Leave unset on Vercel, where OIDC supplies the credential.
+   */
+  apiKey?: string;
   /** Passed to the AI SDK, which retries on transient errors. Defaults to 2. */
   maxRetries?: number;
   /** Keeps every call's state and questions in the log. Off for long batches. */
@@ -44,6 +51,7 @@ export interface GatewayJevClientOptions {
 
 export class GatewayJevClient implements JevClient {
   private readonly model: string;
+  private readonly evaluationModel: unknown;
   private readonly maxRetries: number;
   private readonly keepFullLog: boolean;
   private readonly gatewayOptions?: Record<string, unknown>;
@@ -61,6 +69,12 @@ export class GatewayJevClient implements JevClient {
 
   constructor(options: GatewayJevClientOptions = {}) {
     this.model = options.model ?? JEV_MODEL_ID;
+    const apiKey = options.apiKey ?? process.env.AI_GATEWAY_API_KEY;
+    // An explicit provider instance keeps key resolution independent of when
+    // the module was imported relative to .env being loaded.
+    this.evaluationModel = apiKey
+      ? createGateway({ apiKey }).evaluationModel(this.model as never)
+      : this.model;
     this.maxRetries = options.maxRetries ?? 2;
     this.keepFullLog = options.keepFullLog ?? true;
     this.gatewayOptions = options.gatewayOptions;
@@ -80,7 +94,7 @@ export class GatewayJevClient implements JevClient {
 
     try {
       const result = await this.evaluateFn({
-        model: this.model,
+        model: this.evaluationModel as never,
         state: request.state as never,
         questions: request.questions as never,
         maxRetries: this.maxRetries,

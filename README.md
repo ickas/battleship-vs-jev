@@ -1,0 +1,158 @@
+# Battleship vs. Jev
+
+A Battleship benchmark for **Jev**, TypeSafe's "System One" model, reached through
+Vercel AI Gateway.
+
+Jev is not a generative LLM. You send it a `state` plus typed questions and it returns
+structured answers with probability distributions. This project measures how well it
+plays Battleship, and shows *how* it decides, by rendering its own per-cell
+probabilities as a live heatmap.
+
+The goal is an honest benchmark first. A strong player is secondary — the code-only
+baselines are here precisely so the model's performance can be read against something.
+
+## What it measures
+
+Five strategies play the same seeded fleet layouts:
+
+| Strategy | Model calls | What it does |
+| --- | --- | --- |
+| `random` | no | Uniform random among untried cells. The floor. |
+| `huntTarget` | no | Classic parity search, then works outwards from hits. |
+| `density` | no | Counts valid remaining-ship placements per cell. The strongest code player. |
+| `jevPure` | yes | One Choice over every untried cell. Code supplies only the rules. |
+| `jevHybrid` | yes | Code ranks the top K cells; Jev only compares those. |
+
+The headline number is **mean shots to sink the fleet** — lower is better. 17 is
+perfect, 100 is the worst possible.
+
+## Requirements
+
+- Node 20 or later (developed on Node 26)
+- An `AI_GATEWAY_API_KEY` from [Vercel AI Gateway](https://vercel.com/docs/ai-gateway),
+  for the Jev strategies only. Everything else runs without one.
+
+```bash
+npm install
+cp .env.example .env   # then paste your key into .env
+```
+
+## Running it
+
+```bash
+npm test                 # 119 unit tests, no network
+npm start                # web UI at http://localhost:3000
+npm run bench -- --games 20
+npm run repr -- --positions 24
+npm run selfplay -- --games 50
+```
+
+Every command takes `--mock` to run without an API key. Mock answers come from the
+same code-side density the baselines use, so they are **never benchmark results** —
+the output says so, and every mock response is tagged `mock-not-a-model`.
+
+### Benchmark (Phase 1)
+
+```bash
+npm run bench -- --games 20 --strategies density,jevHybrid --representation semantic
+```
+
+All strategies face identical layouts, so the comparison is paired. Results are
+written to `results/` as JSON and CSV.
+
+```
+strategy             games  mean  median    sd  min  max  acc  ms/shot  tok/game
+-------------------  -----  ----  ------  ----  ---  ---  ---  -------  --------
+Probability density      6  48.0    47.0   5.8   42   58  35%       <1         -
+Hunt / Target            6  51.7    56.5  13.1   33   66  33%       <1         -
+Random                   6  95.5    99.0   7.8   80  100  18%       <1         -
+```
+
+### Representation comparison (Phase 0)
+
+```bash
+npm run repr -- --positions 24
+```
+
+Compares three ways of describing the board to Jev on a fixed set of mid-game
+positions. See [docs/representation.md](docs/representation.md) for the method and
+results.
+
+### Self-play (Phase 2)
+
+```bash
+npm run selfplay -- --games 50
+```
+
+Two Jev players, identical except that one uses a history of its opponent and one
+does not. Reports the win rate and whether the difference is distinguishable from
+noise.
+
+## Architecture
+
+```
+src/
+  engine/      board, fleet, placement validation, shot resolution, density, game loop
+  jev/         JevClient - the ONLY place that talks to Jev
+    gateway      AI SDK experimental_evaluate through AI Gateway
+    mock         stand-in for tests and UI work without a key
+    representations  the three board encodings compared in Phase 0
+  strategies/  shared Strategy interface: nextShot(view)
+  selfplay/    Phase 2: opponent history, Jev-driven placement, match loop
+  metrics/     per-shot and per-game aggregation, comparison table, CSV
+  bench/       headless runners for all three phases
+  server/      holds the API key; the browser never sees it
+  ui/          board view, live heatmap, metrics panel
+```
+
+Two rules shape the whole design:
+
+**All arithmetic lives in code.** Jev is documented as unreliable at counting, numeric
+precision and date comparison. So the engine does every rule check, every placement
+count and every probability calculation. Jev is only ever asked to judge between
+options that code has already established are legal.
+
+**Every Jev call goes through `JevClient`,** which logs the state, the questions, the
+response, latency, tokens, confidence and the resolved model version. Nothing else in
+the codebase imports the AI SDK.
+
+## Verified API facts
+
+Checked against the docs rather than from memory, on 2026-09-19:
+
+| Fact | Value | Source |
+| --- | --- | --- |
+| Model id | `typesafe-ai/jev` | [Vercel changelog](https://vercel.com/changelog/typesafe-ai-jev-now-available-on-ai-gateway) |
+| Resolved version | `jev-1.13.0` (aliases `jev-latest`, `jev-preview`) | [Models](https://docs.typesafe.ai/models.md) |
+| Minimum AI SDK | 7.0.105 | Vercel changelog |
+| Question types | `boolean`, `choice`, `score` | [Evaluation](https://vercel.com/docs/ai-gateway/modalities/evaluation) |
+| Max Choice options | 255 | [Choice](https://docs.typesafe.ai/primitives/choice.md) |
+| Request budget | 64k tokens; state + longest question 32k | [Models](https://docs.typesafe.ai/models.md) |
+| Pricing | $0.042 per million input tokens; output free | [Models](https://docs.typesafe.ai/models.md) |
+| Rate limits | 250,000 tokens/sec, 1,200 requests/min, adjusted dynamically | [Models](https://docs.typesafe.ai/models.md) |
+| Confidence | `result.providerMetadata.typesafe.confidence` | Vercel changelog |
+
+Two places where the shipped SDK types are stricter than the prose docs, and the code
+follows the types:
+
+- `probabilities` is **optional** on choice and score answers. Nothing here assumes a
+  heatmap is available; the UI falls back to the code-side ranking when it is absent.
+- `rounding` is `{ probabilityDecimals?, scoreDecimals? }`, not a number.
+
+Evaluation is available through the AI SDK only — not on the OpenAI-, Anthropic- or
+Cohere-compatible Gateway endpoints.
+
+## Honesty notes
+
+- Latency reported everywhere is **end to end through the Gateway**, measured by the
+  client. It includes Gateway overhead and is not a measure of Jev alone.
+- Results are only comparable within a single model version. Every result file records
+  the version that answered.
+- The self-play history test refuses to claim an effect below 10 decided games, or
+  when the win rate sits within noise of a coin flip.
+- No cost or limit in this repo was invented. Anything not in the table above is not
+  claimed.
+
+## Licence
+
+MIT

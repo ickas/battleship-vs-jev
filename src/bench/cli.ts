@@ -4,6 +4,9 @@ import { makeConfig } from '../engine/config.js';
 import { formatComparisonTable, resultsToCsv } from '../metrics/summary.js';
 import { runBench } from './runner.js';
 import { ALL_STRATEGY_IDS, buildClient, buildStrategy, strategyUsesModel } from './strategies.js';
+import { loadEnv } from '../env.js';
+
+loadEnv();
 
 /**
  * Headless benchmark runner.

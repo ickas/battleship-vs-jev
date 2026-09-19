@@ -13,6 +13,9 @@ import type { ChoiceAnswer, JevClient } from '../jev/types.js';
 import { DensityStrategy } from '../strategies/density.js';
 import { mean, percentile } from '../metrics/summary.js';
 import { untriedCells } from '../strategies/untried.js';
+import { loadEnv } from '../env.js';
+
+loadEnv();
 
 /**
  * Phase 0: which board representation should go in Jev's `state`?
