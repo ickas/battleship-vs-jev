@@ -19,6 +19,8 @@ export interface MockJevClientOptions {
   latencyMs?: number;
   /** Fixed confidence reported for every question. */
   confidence?: number;
+  /** Most recent calls retained in `log`. Defaults to 500. */
+  maxLogEntries?: number;
 }
 
 export const MOCK_MODEL_ID = 'mock-not-a-model';
@@ -26,6 +28,7 @@ export const MOCK_MODEL_ID = 'mock-not-a-model';
 export class MockJevClient implements JevClient {
   private readonly calls: JevCallLog[] = [];
   private readonly options: MockJevClientOptions;
+  private readonly maxLogEntries: number;
 
   readonly stats = {
     calls: 0,
@@ -37,6 +40,7 @@ export class MockJevClient implements JevClient {
 
   constructor(options: MockJevClientOptions = {}) {
     this.options = options;
+    this.maxLogEntries = options.maxLogEntries ?? 500;
   }
 
   get log(): readonly JevCallLog[] {
@@ -90,7 +94,7 @@ export class MockJevClient implements JevClient {
       latencyMs,
     };
 
-    this.calls.push({
+    this.record({
       label: request.label ?? 'unlabelled',
       state: request.state,
       questions: request.questions,
@@ -103,6 +107,15 @@ export class MockJevClient implements JevClient {
     this.stats.totalLatencyMs += latencyMs;
 
     return response;
+  }
+
+  private record(log: JevCallLog): void {
+    this.calls.push(log);
+    // Keep the log bounded: a few hundred games would otherwise retain every
+    // state object for the life of the process. Running totals live in `stats`.
+    if (this.calls.length > this.maxLogEntries) {
+      this.calls.splice(0, this.calls.length - this.maxLogEntries);
+    }
   }
 }
 

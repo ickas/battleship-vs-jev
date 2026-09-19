@@ -1,4 +1,4 @@
-import type { BoardView, Coord, GameConfig, PlacedShip } from '../engine/types.js';
+import type { BoardView, Coord, GameConfig } from '../engine/types.js';
 import type { Rng } from '../engine/rng.js';
 
 /** Per-cell probabilities in [0,1], indexed `[row][col]`. Rendered as the UI heatmap. */
@@ -28,13 +28,6 @@ export interface ShotDecision {
   modelId?: string;
 }
 
-export interface PlacementContext {
-  config: GameConfig;
-  rng: Rng;
-  /** Semantic summaries of the opponent's past behaviour, when history is enabled. */
-  historySummary?: string[];
-}
-
 export interface Strategy {
   /** Stable id used in benchmark output. */
   readonly id: string;
@@ -44,9 +37,6 @@ export interface Strategy {
 
   /** Chooses the next cell to fire at. Must return a cell that is still 'unknown'. */
   nextShot(view: BoardView, rng: Rng): Promise<ShotDecision>;
-
-  /** Lays out a fleet. Defaults to a random valid layout when not implemented. */
-  placeFleet?(context: PlacementContext): Promise<PlacedShip[]>;
 }
 
 export function emptyHeatmap(config: GameConfig): Heatmap {

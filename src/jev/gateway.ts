@@ -42,6 +42,8 @@ export interface GatewayJevClientOptions {
   maxRetries?: number;
   /** Keeps every call's state and questions in the log. Off for long batches. */
   keepFullLog?: boolean;
+  /** Most recent calls retained in `log`. Defaults to 500. */
+  maxLogEntries?: number;
   /** Gateway-specific per-request options, e.g. `{ zeroDataRetention: true }`. */
   gatewayOptions?: Record<string, unknown>;
   /** Injected in tests. Defaults to the AI SDK's `experimental_evaluate`. */
@@ -54,6 +56,7 @@ export class GatewayJevClient implements JevClient {
   private readonly evaluationModel: unknown;
   private readonly maxRetries: number;
   private readonly keepFullLog: boolean;
+  private readonly maxLogEntries: number;
   private readonly gatewayOptions?: Record<string, unknown>;
   private readonly evaluateFn: typeof evaluate;
   private readonly onCall?: (log: JevCallLog) => void;
@@ -77,6 +80,7 @@ export class GatewayJevClient implements JevClient {
       : this.model;
     this.maxRetries = options.maxRetries ?? 2;
     this.keepFullLog = options.keepFullLog ?? true;
+    this.maxLogEntries = options.maxLogEntries ?? 500;
     this.gatewayOptions = options.gatewayOptions;
     this.evaluateFn = options.evaluateFn ?? evaluate;
     this.onCall = options.onCall;
@@ -156,6 +160,11 @@ export class GatewayJevClient implements JevClient {
 
   private record(log: JevCallLog): void {
     this.calls.push(log);
+    // Keep the log bounded: a few hundred games would otherwise retain every
+    // state object for the life of the process. Running totals live in `stats`.
+    if (this.calls.length > this.maxLogEntries) {
+      this.calls.splice(0, this.calls.length - this.maxLogEntries);
+    }
     this.onCall?.(log);
   }
 }
@@ -219,9 +228,13 @@ function normalizeWarnings(warnings: unknown): string[] | undefined {
 
 /**
  * Checks what can be checked before spending a request: option counts, and a
- * rough token estimate against the documented budgets. The estimate uses the
- * usual ~4 characters per token approximation and is deliberately conservative;
- * it is a guard against obviously oversized state, not an exact accounting.
+ * rough token estimate against the documented budgets.
+ *
+ * The estimate uses the usual ~4 characters per token approximation. For the
+ * JSON state sent here that is optimistic, not conservative - punctuation and
+ * short keys tokenize worse than prose - so this catches only obviously
+ * oversized state. It is a guard, not an accounting; the authoritative figure
+ * is `usage.inputTokens` on the response.
  */
 export function assertRequestIsWithinLimits(request: JevRequest): void {
   const questionIds = Object.keys(request.questions);
@@ -266,7 +279,10 @@ export function assertRequestIsWithinLimits(request: JevRequest): void {
   }
 }
 
-/** Rough ~4 characters per token approximation. Used only for pre-flight guards. */
+/**
+ * Rough ~4 characters per token approximation, used only for pre-flight guards.
+ * Real usage is read from the response, never computed from this.
+ */
 export function estimateTokens(chars: number): number {
   return Math.ceil(chars / 4);
 }

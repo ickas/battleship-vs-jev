@@ -250,5 +250,3 @@ export function getRepresentation(id: string): BoardRepresentation {
   return found;
 }
 
-/** Re-exported for the strategies, which need the legal target list. */
-export { untriedCells };

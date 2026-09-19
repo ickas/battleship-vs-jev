@@ -180,4 +180,3 @@ function countHits(board: Board): number {
   return board.history.filter((s) => s.result !== 'miss').length;
 }
 
-export { coordKey };

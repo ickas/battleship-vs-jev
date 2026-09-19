@@ -57,6 +57,16 @@ describe('GatewayJevClient.ask', () => {
     expect(client.stats).toMatchObject({ calls: 2, failures: 0, inputTokens: 240, outputTokens: 16 });
   });
 
+  it('bounds the log so a long batch cannot grow it without limit', async () => {
+    const client = new GatewayJevClient({ evaluateFn: fakeEvaluate(), maxLogEntries: 10 });
+    for (let i = 0; i < 25; i++) await client.ask(choiceRequest);
+
+    expect(client.log).toHaveLength(10);
+    // Running totals still cover every call.
+    expect(client.stats.calls).toBe(25);
+    expect(client.stats.inputTokens).toBe(25 * 120);
+  });
+
   it('omits state from the log when keepFullLog is off', async () => {
     const client = new GatewayJevClient({ evaluateFn: fakeEvaluate(), keepFullLog: false });
     await client.ask(choiceRequest);

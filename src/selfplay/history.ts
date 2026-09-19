@@ -1,4 +1,4 @@
-import { coordKey, coordToLabel } from '../engine/coords.js';
+import { coordToLabel } from '../engine/coords.js';
 import type { Coord, GameConfig, PlacedShip } from '../engine/types.js';
 
 /**
@@ -235,4 +235,3 @@ function mostCommon(values: string[]): { value: string; count: number } | undefi
   return { value: best[0], count: best[1] };
 }
 
-export { coordKey };
