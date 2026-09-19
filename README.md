@@ -29,8 +29,30 @@ perfect, 100 is the worst possible.
 ## Requirements
 
 - Node 20.12 or later, for `process.loadEnvFile` (developed on Node 26)
-- An `AI_GATEWAY_API_KEY` from [Vercel AI Gateway](https://vercel.com/docs/ai-gateway),
-  for the Jev strategies only. Everything else runs without one.
+- A key for **one of the two transports** below, for the Jev strategies only.
+  Everything else runs without either.
+
+### Two ways to reach Jev
+
+| | `--transport direct` | `--transport gateway` (default) |
+| --- | --- | --- |
+| Route | TypeSafe API, `@typesafe-ai/sdk` | Vercel AI Gateway, AI SDK `experimental_evaluate` |
+| Key | `TYPESAFE_API_KEY` | `AI_GATEWAY_API_KEY` |
+| Reports the model that answered | **yes** (`result.model`) | no, only the alias requested |
+| Version can be pinned | **yes**, via `--model` | no, pinned ids return "Model not found" |
+| `probabilities` / `confidence` | always present | optional in the SDK's types |
+| Free-tier rate limit | not the Gateway's | severe; see below |
+
+**Use `direct` for benchmarking.** It is the only transport that can record which
+model version produced a result, which the plan requires and the Gateway cannot
+supply. `gateway` is kept because the plan's premise is Gateway access, and running
+both is how Gateway overhead gets measured.
+
+```bash
+npm run repr -- --transport direct --positions 200
+npm run bench -- --transport direct --games 20 --model jev-1.13.0
+npx tsx scripts/list-models.mts   # which versions this account can pin
+```
 
 ```bash
 npm install
@@ -54,7 +76,8 @@ npm run repr -- --positions 24
 npm run selfplay -- --games 50
 ```
 
-Every command takes `--mock` to run without an API key. Mock answers come from the
+Every command takes `--transport direct|gateway|mock`; `--mock` is shorthand for the
+last. Mock answers come from the
 same code-side density the baselines use, so they are **never benchmark results** —
 the output says so, and every mock response is tagged `mock-not-a-model`.
 
@@ -118,7 +141,8 @@ noise.
 src/
   engine/      board, fleet, placement validation, shot resolution, density, game loop
   jev/         JevClient - the ONLY place that talks to Jev
-    gateway      AI SDK experimental_evaluate through AI Gateway
+    gateway      AI SDK experimental_evaluate through Vercel AI Gateway
+    direct       TypeSafe API via @typesafe-ai/sdk; reports the real model version
     mock         stand-in for tests and UI work without a key
     representations  the three board encodings compared in Phase 0
   strategies/  shared Strategy interface: nextShot(view)
@@ -171,7 +195,7 @@ follows the types:
 Evaluation is available through the AI SDK only — not on the OpenAI-, Anthropic- or
 Cohere-compatible Gateway endpoints.
 
-### The model version cannot be recorded, and this matters
+### The model version cannot be recorded *through the Gateway*, and this matters
 
 The plan asks for the Jev version in every benchmark result, since results are not
 comparable across versions. **Through the Gateway, that is not currently possible.**
@@ -184,7 +208,9 @@ Probed on 2026-09-19 with `npx tsx scripts/probe-model-version.mts`:
   `typesafe-ai/jev-latest` all return `Model not found`.
 
 TypeSafe's own docs say the alias points at `jev-1.13.0`, but nothing in the Gateway
-response confirms which build answered a given call. So results here record the alias
+response confirms which build answered a given call. **The direct transport does not
+have this problem** — `SystemOneResult.model` names the model that answered, and
+`--model` pins a version — which is why it is the right choice for a benchmark. So results here record the alias
 and the date, and **a silent model update would be invisible**. Every result file also
 stores the Gateway `generationId` for each call — in the JSON, and in the CSV's
 `generationIds` column — which is the only reliable way to tie a benchmark row back to

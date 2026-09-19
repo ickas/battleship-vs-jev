@@ -251,16 +251,22 @@ async function main(): Promise<void> {
     return index >= 0 && argv[index + 1] ? argv[index + 1]! : fallback;
   };
   const positionCount = Number(flag('positions', '24'));
-  const mock = argv.includes('--mock');
+  const transport = argv.includes('--mock')
+    ? ('mock' as const)
+    : (flag('transport', 'gateway') as 'gateway' | 'direct' | 'mock');
   const out = flag('out', 'results');
   // The free tier rate-limits this model, so pace by default.
   const minIntervalMs = Number(flag('minIntervalMs', '1500'));
 
-  if (mock) {
+  if (transport === 'mock') {
     console.warn('WARNING: mock client. These are NOT benchmark results.\n');
   }
 
-  const client = buildClient({ mock, minIntervalMs });
+  const client = buildClient({
+    transport,
+    minIntervalMs,
+    ...(flag('model', '') ? { model: flag('model', '') } : {}),
+  });
   console.log(`Building ${positionCount} positions...`);
   const positions = await buildPositions({ count: positionCount });
 

@@ -184,8 +184,16 @@ chosen on reasoning rather than evidence, and are labelled as such:
 
 ### What would settle it
 
-Roughly 200 positions per representation, which is about 600 calls. That needs
-paid Gateway credits; see below. Until then the representation question is open,
+Roughly 200 positions per representation, which is about 600 calls:
+
+```bash
+npm run repr -- --transport direct --positions 200
+```
+
+The direct transport exists for exactly this. It talks to the TypeSafe API instead
+of the Gateway, so it is not subject to the Gateway free tier's limit, and it
+reports the model that actually answered — so a re-run at that scale would also
+close the version-recording gap described in the README. Until then the representation question is open,
 and the code says so rather than implying it was answered.
 
 ## The free tier will not sustain this benchmark

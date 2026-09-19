@@ -21,16 +21,21 @@ async function main(): Promise<void> {
   };
 
   const games = Number(flag('games', '20'));
-  const mock = argv.includes('--mock');
+  const transport = argv.includes('--mock')
+    ? ('mock' as const)
+    : (flag('transport', 'gateway') as 'gateway' | 'direct' | 'mock');
   const out = flag('out', 'results');
 
-  if (mock) console.warn('WARNING: mock client. These are NOT benchmark results.\n');
+  if (transport === 'mock') {
+    console.warn('WARNING: mock client. These are NOT benchmark results.\n');
+  }
 
   const config = makeConfig();
   const client = buildClient({
-    mock,
+    transport,
     keepFullLog: false,
     minIntervalMs: Number(flag('minIntervalMs', '1500')),
+    ...(flag('model', '') ? { model: flag('model', '') } : {}),
   });
 
   console.log(`Running ${games} self-play games (history on vs. history off)\n`);

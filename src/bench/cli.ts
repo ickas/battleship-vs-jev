@@ -3,7 +3,13 @@ import { join } from 'node:path';
 import { makeConfig } from '../engine/config.js';
 import { formatComparisonTable, resultsToCsv } from '../metrics/summary.js';
 import { runBench } from './runner.js';
-import { ALL_STRATEGY_IDS, buildClient, buildStrategy, strategyUsesModel } from './strategies.js';
+import {
+  ALL_STRATEGY_IDS,
+  buildClient,
+  buildStrategy,
+  strategyUsesModel,
+  type Transport,
+} from './strategies.js';
 import { loadEnv } from '../env.js';
 
 loadEnv();
@@ -21,7 +27,8 @@ interface Args {
   representation: string;
   topK: number;
   temperature: number;
-  mock: boolean;
+  model?: string;
+  transport: Transport;
   out: string;
   allowTouching: boolean;
   minIntervalMs: number;
@@ -61,9 +68,10 @@ function parseArgs(argv: string[]): Args {
     representation: flags.get('representation') ?? 'semantic',
     topK: Number(flags.get('topK') ?? 8),
     temperature: Number(flags.get('temperature') ?? 0),
-    mock: flags.get('mock') === 'true',
+    transport: parseTransport(flags),
     out: flags.get('out') ?? 'results',
     minIntervalMs: Number(flags.get('minIntervalMs') ?? 1500),
+    ...(flags.get('model') ? { model: flags.get('model')! } : {}),
     allowTouching: flags.get('allowTouching') !== 'false',
   };
 }
@@ -79,6 +87,19 @@ const MODEL_VERSION_NOTE =
   'update would be invisible here. Each call\'s generationId is recorded in the\n' +
   'JSON output for cross-checking against the Gateway request logs.';
 
+/**
+ * `--transport direct|gateway|mock`, with `--mock` kept as a shorthand.
+ * Direct talks to the TypeSafe API; gateway goes through Vercel AI Gateway.
+ */
+function parseTransport(flags: Map<string, string>): Transport {
+  if (flags.get('mock') === 'true') return 'mock';
+  const value = flags.get('transport') ?? 'gateway';
+  if (value !== 'gateway' && value !== 'direct' && value !== 'mock') {
+    throw new Error(`--transport must be gateway, direct or mock, got "${value}"`);
+  }
+  return value;
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const config = makeConfig({ allowTouching: args.allowTouching });
@@ -86,11 +107,12 @@ async function main(): Promise<void> {
   // A real client is only required when a model strategy will actually call it.
   const needsModel = args.strategies.some(strategyUsesModel);
   const client = buildClient({
-    mock: args.mock || !needsModel,
+    transport: needsModel ? args.transport : 'mock',
     minIntervalMs: args.minIntervalMs,
+    ...(args.model ? { model: args.model } : {}),
   });
 
-  if (args.mock && needsModel) {
+  if (args.transport === 'mock' && needsModel) {
     console.warn(
       'WARNING: running Jev strategies against the mock client. These are NOT benchmark results.\n',
     );
