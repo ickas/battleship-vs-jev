@@ -123,7 +123,7 @@ Checked against the docs rather than from memory, on 2026-09-19:
 | Fact | Value | Source |
 | --- | --- | --- |
 | Model id | `typesafe-ai/jev` | [Vercel changelog](https://vercel.com/changelog/typesafe-ai-jev-now-available-on-ai-gateway) |
-| Resolved version | `jev-1.13.0` (aliases `jev-latest`, `jev-preview`) | [Models](https://docs.typesafe.ai/models.md) |
+| Version reported by the Gateway | none — see below | observed |
 | Minimum AI SDK | 7.0.105 | Vercel changelog |
 | Question types | `boolean`, `choice`, `score` | [Evaluation](https://vercel.com/docs/ai-gateway/modalities/evaluation) |
 | Max Choice options | 255 | [Choice](https://docs.typesafe.ai/primitives/choice.md) |
@@ -137,10 +137,33 @@ follows the types:
 
 - `probabilities` is **optional** on choice and score answers. Nothing here assumes a
   heatmap is available; the UI falls back to the code-side ranking when it is absent.
-- `rounding` is `{ probabilityDecimals?, scoreDecimals? }`, not a number.
+- `rounding` is `{ probabilityDecimals?, scoreDecimals? }`, not a number. Live responses
+  report `{ probabilityDecimals: 2, scoreDecimals: 2 }`, so the heatmap's real
+  granularity is 0.01.
 
 Evaluation is available through the AI SDK only — not on the OpenAI-, Anthropic- or
 Cohere-compatible Gateway endpoints.
+
+### The model version cannot be recorded, and this matters
+
+The plan asks for the Jev version in every benchmark result, since results are not
+comparable across versions. **Through the Gateway, that is not currently possible.**
+Probed on 2026-09-19 with `npx tsx scripts/probe-model-version.mts`:
+
+- `response.modelId` returns `typesafe-ai/jev` — the alias that was requested, not a
+  resolved build.
+- `providerMetadata.gateway.routing.canonicalSlug` is also `typesafe-ai/jev`.
+- Pinning a version fails: `typesafe-ai/jev-1.13.0`, `typesafe-ai/jev-1.13` and
+  `typesafe-ai/jev-latest` all return `Model not found`.
+
+TypeSafe's own docs say the alias points at `jev-1.13.0`, but nothing in the Gateway
+response confirms which build answered a given call. So results here record the alias
+and the date, and **a silent model update would be invisible**. Every result file also
+stores the Gateway `generationId`, which is the only reliable way to tie a benchmark
+row back to a specific call in the Gateway logs.
+
+Confidence is reported for `choice` and `score` only. A boolean-only request returns
+`confidence: {}`.
 
 ## Honesty notes
 

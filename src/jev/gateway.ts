@@ -114,6 +114,7 @@ export class GatewayJevClient implements JevClient {
           totalTokens: result.usage?.totalTokens,
         },
         modelId: result.response?.modelId ?? this.model,
+        ...extractGatewayMetadata(result.providerMetadata),
         latencyMs,
         warnings: normalizeWarnings(result.warnings),
         rounding: result.rounding,
@@ -184,6 +185,31 @@ export function extractConfidence(
     return out;
   }
   return {};
+}
+
+/**
+ * Pulls the Gateway's own bookkeeping out of providerMetadata: the generation
+ * id, and the list and billed costs. Costs are read from the response rather
+ * than computed from a hardcoded rate.
+ */
+export function extractGatewayMetadata(providerMetadata: unknown): {
+  generationId?: string;
+  marketCostUsd?: number;
+  billedCostUsd?: number;
+} {
+  const gateway = (providerMetadata as { gateway?: Record<string, unknown> } | undefined)?.gateway;
+  if (!gateway) return {};
+
+  const toNumber = (value: unknown): number | undefined => {
+    const parsed = typeof value === 'string' ? Number(value) : value;
+    return typeof parsed === 'number' && Number.isFinite(parsed) ? parsed : undefined;
+  };
+
+  return {
+    generationId: typeof gateway.generationId === 'string' ? gateway.generationId : undefined,
+    marketCostUsd: toNumber(gateway.marketCost),
+    billedCostUsd: toNumber(gateway.cost),
+  };
 }
 
 function normalizeWarnings(warnings: unknown): string[] | undefined {

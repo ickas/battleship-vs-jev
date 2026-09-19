@@ -72,10 +72,21 @@ export interface JevResponse {
   confidence: Record<string, number>;
   usage: JevUsage;
   /**
-   * The model version that actually answered. Results are only comparable
-   * within one version, so every benchmark record carries it.
+   * The model id the Gateway reports. Note this is the alias that was
+   * requested (`typesafe-ai/jev`), not a resolved version number: the Gateway
+   * does not expose which Jev build answered. See docs/representation.md.
    */
   modelId: string;
+  /** Gateway generation id, for cross-checking a call against the Gateway logs. */
+  generationId?: string;
+  /**
+   * What the call would cost at list price, in USD, as reported by the Gateway
+   * (`marketCost`). Read from the response rather than computed here, so no
+   * price is hardcoded.
+   */
+  marketCostUsd?: number;
+  /** What the call was actually billed, in USD (`cost`). */
+  billedCostUsd?: number;
   /** End-to-end latency measured by the client, including Gateway overhead. */
   latencyMs: number;
   warnings?: string[];

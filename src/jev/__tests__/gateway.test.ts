@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   assertRequestIsWithinLimits,
   extractConfidence,
+  extractGatewayMetadata,
   GatewayJevClient,
   JEV_LIMITS,
 } from '../gateway.js';
@@ -110,6 +111,27 @@ describe('GatewayJevClient.ask', () => {
   });
 });
 
+describe('extractGatewayMetadata', () => {
+  it('reads the generation id and both cost figures, parsing string numbers', () => {
+    expect(
+      extractGatewayMetadata({
+        gateway: { generationId: 'gen_123', marketCost: '0.000011424', cost: '0' },
+      }),
+    ).toEqual({ generationId: 'gen_123', marketCostUsd: 0.000011424, billedCostUsd: 0 });
+  });
+
+  it('returns an empty object when the gateway block is absent', () => {
+    expect(extractGatewayMetadata(undefined)).toEqual({});
+    expect(extractGatewayMetadata({ typesafe: {} })).toEqual({});
+  });
+
+  it('ignores unparseable cost values rather than reporting NaN', () => {
+    const metadata = extractGatewayMetadata({ gateway: { marketCost: 'free', cost: null } });
+    expect(metadata.marketCostUsd).toBeUndefined();
+    expect(metadata.billedCostUsd).toBeUndefined();
+  });
+});
+
 describe('extractConfidence', () => {
   it('reads a per-question record', () => {
     expect(extractConfidence({ typesafe: { confidence: { a: 0.5, b: 0.9 } } }, ['a', 'b'])).toEqual({
@@ -129,6 +151,12 @@ describe('extractConfidence', () => {
     expect(extractConfidence(undefined, ['a'])).toEqual({});
     expect(extractConfidence({}, ['a'])).toEqual({});
     expect(extractConfidence({ typesafe: {} }, ['a'])).toEqual({});
+  });
+
+  it('returns an empty record for the empty object a boolean-only call returns', () => {
+    // Observed live: boolean questions carry no confidence, so the provider
+    // sends `confidence: {}` rather than omitting the field.
+    expect(extractConfidence({ typesafe: { confidence: {} } }, ['a'])).toEqual({});
   });
 });
 
