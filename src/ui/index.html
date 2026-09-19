@@ -32,9 +32,29 @@
         </div>
 
         <div class="field">
+          <label for="layout-mode">Fleet layout</label>
+          <select id="layout-mode">
+            <option value="seed">Random from seed</option>
+            <option value="manual">Place it myself</option>
+          </select>
+        </div>
+
+        <div class="field" id="seed-field">
           <label for="seed">Layout seed</label>
           <input id="seed" type="number" value="1" min="0" step="1" />
           <p class="hint">Same seed means the same fleet layout, so runs are comparable.</p>
+        </div>
+
+        <div class="field" id="placement-field" hidden>
+          <label>Your fleet</label>
+          <ul class="fleet-list" id="fleet-list"></ul>
+          <p class="hint" id="placement-hint">
+            Pick a ship, then click a cell to put its bow there.
+          </p>
+          <div class="buttons compact">
+            <button id="rotate" type="button">Rotate: horizontal</button>
+            <button id="clear-fleet" type="button">Clear</button>
+          </div>
         </div>
 
         <div class="field checkbox">

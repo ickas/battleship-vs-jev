@@ -11,7 +11,184 @@ const state = {
   game: null,
   autoPlaying: false,
   abort: false,
+  // Manual fleet placement, used when layout mode is "manual".
+  placing: {
+    active: false,
+    orientation: 'horizontal',
+    selectedShipId: null,
+    // shipId -> { id, bow: {row, col}, orientation }
+    placed: new Map(),
+  },
 };
+
+/** Cells a ship would occupy. Mirrors the engine, for preview only. */
+function shipCells(bow, length, orientation) {
+  return Array.from({ length }, (_, i) =>
+    orientation === 'horizontal'
+      ? { row: bow.row, col: bow.col + i }
+      : { row: bow.row + i, col: bow.col },
+  );
+}
+
+/** Whether a placement fits the board and misses every other placed ship. */
+function placementFits(cells, config, ignoreShipId) {
+  const occupied = new Set();
+  for (const ship of state.placing.placed.values()) {
+    if (ship.id === ignoreShipId) continue;
+    const spec = state.config.defaultConfig.fleet.find((s) => s.id === ship.id);
+    for (const cell of shipCells(ship.bow, spec.length, ship.orientation)) {
+      occupied.add(`${cell.row}-${cell.col}`);
+    }
+  }
+
+  return cells.every(
+    (cell) =>
+      cell.row >= 0 &&
+      cell.row < config.rows &&
+      cell.col >= 0 &&
+      cell.col < config.cols &&
+      !occupied.has(`${cell.row}-${cell.col}`),
+  );
+}
+
+function nextUnplacedShip() {
+  return state.config.defaultConfig.fleet.find((spec) => !state.placing.placed.has(spec.id));
+}
+
+function renderFleetList() {
+  const list = el('fleet-list');
+  list.innerHTML = '';
+
+  for (const spec of state.config.defaultConfig.fleet) {
+    const placed = state.placing.placed.get(spec.id);
+    const li = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute('aria-pressed', String(state.placing.selectedShipId === spec.id));
+    button.addEventListener('click', () => {
+      state.placing.selectedShipId = spec.id;
+      // Re-placing a ship lifts it off the board first.
+      state.placing.placed.delete(spec.id);
+      renderPlacement();
+    });
+
+    const name = document.createElement('span');
+    name.textContent = `${spec.name} (${spec.length})`;
+
+    const status = document.createElement('span');
+    status.className = placed ? 'placed' : 'pending';
+    status.textContent = placed
+      ? `${LETTERS[placed.bow.col]}${placed.bow.row + 1} ${placed.orientation === 'horizontal' ? '→' : '↓'}`
+      : 'not placed';
+
+    button.append(name, status);
+    li.appendChild(button);
+    list.appendChild(li);
+  }
+
+  const remaining = state.config.defaultConfig.fleet.length - state.placing.placed.size;
+  el('placement-hint').textContent =
+    remaining === 0
+      ? 'Fleet complete. Start the game when you are ready.'
+      : `Pick a ship, then click a cell to put its bow there. ${remaining} left to place.`;
+  el('new-game').disabled = remaining > 0;
+}
+
+/** Draws the board in placement mode: own ships, plus a hover preview. */
+function renderPlacement(preview) {
+  const config = state.config.defaultConfig;
+  const ownCells = new Map();
+  for (const ship of state.placing.placed.values()) {
+    const spec = config.fleet.find((s) => s.id === ship.id);
+    for (const cell of shipCells(ship.bow, spec.length, ship.orientation)) {
+      ownCells.set(`${cell.row}-${cell.col}`, ship.id);
+    }
+  }
+
+  for (let row = 0; row < config.rows; row++) {
+    for (let col = 0; col < config.cols; col++) {
+      const node = el(`cell-${row}-${col}`);
+      if (!node) continue;
+      node.className = 'cell placing';
+      node.textContent = '';
+      node.removeAttribute('title');
+      node.style.removeProperty('--heat-alpha');
+      delete node.dataset.heat;
+      if (ownCells.has(`${row}-${col}`)) node.classList.add('own-ship');
+    }
+  }
+
+  if (preview) {
+    for (const cell of preview.cells) {
+      const node = el(`cell-${cell.row}-${cell.col}`);
+      if (node) node.classList.add(preview.ok ? 'preview-ok' : 'preview-bad');
+    }
+  }
+
+  renderFleetList();
+}
+
+function handlePlacementHover(row, col) {
+  const shipId = state.placing.selectedShipId;
+  if (!shipId) return;
+  const spec = state.config.defaultConfig.fleet.find((s) => s.id === shipId);
+  const cells = shipCells({ row, col }, spec.length, state.placing.orientation);
+  renderPlacement({
+    cells,
+    ok: placementFits(cells, state.config.defaultConfig, shipId),
+  });
+}
+
+function handlePlacementClick(row, col) {
+  const shipId = state.placing.selectedShipId;
+  if (!shipId) {
+    const complete = state.placing.placed.size === state.config.defaultConfig.fleet.length;
+    showError(
+      complete
+        ? 'Your fleet is complete. Pick a ship from the list to move it.'
+        : 'Pick a ship from the list first.',
+    );
+    return;
+  }
+
+  const spec = state.config.defaultConfig.fleet.find((s) => s.id === shipId);
+  const cells = shipCells({ row, col }, spec.length, state.placing.orientation);
+  if (!placementFits(cells, state.config.defaultConfig, shipId)) {
+    showError(`${spec.name} does not fit there.`);
+    return;
+  }
+
+  showError('');
+  state.placing.placed.set(shipId, {
+    id: shipId,
+    bow: { row, col },
+    orientation: state.placing.orientation,
+  });
+
+  const next = nextUnplacedShip();
+  state.placing.selectedShipId = next ? next.id : null;
+  renderPlacement();
+}
+
+function setLayoutMode(mode) {
+  const manual = mode === 'manual';
+  state.placing.active = manual;
+  el('seed-field').hidden = manual;
+  el('placement-field').hidden = !manual;
+
+  if (manual) {
+    state.placing.placed.clear();
+    state.placing.selectedShipId = state.config.defaultConfig.fleet[0].id;
+    buildBoard(state.config.defaultConfig.rows, state.config.defaultConfig.cols);
+    renderPlacement();
+    el('step').disabled = true;
+    el('auto').disabled = true;
+    state.game = null;
+  } else {
+    el('new-game').disabled = false;
+    newGame();
+  }
+}
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -54,6 +231,12 @@ function buildBoard(rows, cols) {
       cell.id = `cell-${row}-${col}`;
       cell.setAttribute('role', 'gridcell');
       cell.setAttribute('aria-label', `${LETTERS[col]}${row + 1}`);
+      cell.addEventListener('click', () => {
+        if (state.placing.active) handlePlacementClick(row, col);
+      });
+      cell.addEventListener('mouseenter', () => {
+        if (state.placing.active) handlePlacementHover(row, col);
+      });
       board.appendChild(cell);
     }
   }
@@ -215,8 +398,18 @@ async function newGame() {
     mock: el('mock').checked,
   };
 
+  if (state.placing.active) {
+    if (state.placing.placed.size !== state.config.defaultConfig.fleet.length) {
+      showError('Place every ship before starting.');
+      return;
+    }
+    // Only id, bow and orientation are sent; the server derives the cells.
+    body.fleet = [...state.placing.placed.values()];
+  }
+
   try {
     const game = await api('/api/games', { method: 'POST', body: JSON.stringify(body) });
+    state.placing.active = false;
     buildBoard(game.config.rows, game.config.cols);
     render(game);
   } catch (error) {
@@ -310,6 +503,19 @@ async function init() {
   syncStrategyHints();
   strategySelect.addEventListener('change', syncStrategyHints);
   representationSelect.addEventListener('change', syncStrategyHints);
+  el('layout-mode').addEventListener('change', (event) => setLayoutMode(event.target.value));
+  el('rotate').addEventListener('click', () => {
+    state.placing.orientation =
+      state.placing.orientation === 'horizontal' ? 'vertical' : 'horizontal';
+    el('rotate').textContent = `Rotate: ${state.placing.orientation}`;
+    if (state.placing.active) renderPlacement();
+  });
+  el('clear-fleet').addEventListener('click', () => {
+    state.placing.placed.clear();
+    state.placing.selectedShipId = state.config.defaultConfig.fleet[0].id;
+    showError('');
+    renderPlacement();
+  });
   el('new-game').addEventListener('click', newGame);
   el('step').addEventListener('click', step);
   el('auto').addEventListener('click', toggleAuto);

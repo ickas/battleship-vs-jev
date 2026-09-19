@@ -26,7 +26,15 @@ const PORT = Number(process.env.PORT ?? 3000);
 const MAX_BODY_BYTES = 1_000_000;
 
 const hasApiKey = Boolean(process.env.AI_GATEWAY_API_KEY);
-const liveClient: JevClient | undefined = hasApiKey ? new GatewayJevClient() : undefined;
+const liveClient: JevClient | undefined = hasApiKey
+  ? new GatewayJevClient({
+      // The UI fires one shot at a time, but the free tier rate-limits this
+      // model, so pace and wait out a 429 rather than failing the shot.
+      minIntervalMs: Number(process.env.JEV_MIN_INTERVAL_MS ?? 1200),
+      rateLimitRetries: 4,
+      maxLogEntries: 200,
+    })
+  : undefined;
 const mockClient = new MockJevClient({ latencyMs: 120 });
 
 const sessions = new Map<string, GameSession>();
