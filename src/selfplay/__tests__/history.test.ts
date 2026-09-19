@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '../../engine/config.js';
-import { toPlacedShip } from '../../engine/placement.js';
+import { randomFleet, toPlacedShip } from '../../engine/placement.js';
+import { makeRng } from '../../engine/rng.js';
 import type { Coord, PlacedShip } from '../../engine/types.js';
 import { OpponentHistory } from '../history.js';
 
@@ -60,7 +61,7 @@ describe('OpponentHistory', () => {
     }
 
     const summaries = history.summarize().join(' | ');
-    expect(summaries).toMatch(/against the edge/);
+    expect(summaries).toMatch(/against the edges/);
     expect(summaries).toMatch(/horizontally/);
     expect(summaries).toMatch(/top left/);
   });
@@ -77,8 +78,43 @@ describe('OpponentHistory', () => {
     }
 
     const summaries = history.summarize().join(' | ');
-    expect(summaries).toMatch(/away from the edge/);
+    expect(summaries).toMatch(/away from the edges/);
     expect(summaries).toMatch(/vertically/);
+  });
+
+  it('stays quiet about an ordinary random opponent', () => {
+    // The point of the baselines: a habit that random play already produces is
+    // not a finding. An opponent placing at random should yield few or no
+    // placement claims, so the model is not fed near-tautologies.
+    const history = new OpponentHistory(config);
+    for (let seed = 0; seed < 20; seed++) {
+      history.record({
+        opponentFleet: randomFleet(config, makeRng(seed)),
+        opponentShots: [],
+        won: false,
+        shotsTaken: 0,
+      });
+    }
+
+    const summaries = history.summarize();
+    expect(summaries.join(' | ')).not.toMatch(/against the edges|away from the edges/);
+    // A quadrant claim may survive by chance, but nothing beyond that.
+    expect(summaries.length).toBeLessThanOrEqual(1);
+  });
+
+  it('does not report an edge habit that merely matches random play', () => {
+    // Exactly the historical bug: "at least one ship touches an edge" is true
+    // for 96.5% of random layouts and used to be reported as a tendency.
+    const history = new OpponentHistory(config);
+    for (let seed = 100; seed < 130; seed++) {
+      history.record({
+        opponentFleet: randomFleet(config, makeRng(seed)),
+        opponentShots: [],
+        won: false,
+        shotsTaken: 0,
+      });
+    }
+    expect(history.summarize().join(' | ')).not.toMatch(/edges/);
   });
 
   it('notices a repeated opening shot', () => {

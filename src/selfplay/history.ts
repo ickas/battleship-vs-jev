@@ -19,6 +19,24 @@ export interface GameRecord {
   shotsTaken: number;
 }
 
+/**
+ * How often each tendency appears in a purely random fleet, measured over 3,000
+ * layouts. A habit is only worth telling the model about when it departs from
+ * these.
+ */
+const BASELINE = {
+  /** Mean share of a fleet with at least one cell on the board edge. */
+  edgeFraction: 0.438,
+  /** Share of games where more than half the ships are horizontal. */
+  horizontalMajority: 0.527,
+} as const;
+
+/** How far from the baseline a tendency must sit before it is reported. */
+const MARGIN = { fraction: 0.15, rate: 0.2 } as const;
+
+/** Below this, any apparent pattern is noise. */
+const MIN_GAMES_FOR_SUMMARY = 3;
+
 export class OpponentHistory {
   private readonly records: GameRecord[] = [];
 
@@ -55,57 +73,58 @@ export class OpponentHistory {
   /**
    * Plain-language summaries of the opponent's habits, for Jev's `state`.
    *
-   * Deliberately qualitative and few: only tendencies strong enough to be worth
-   * stating, each phrased as "in N of the last M games". An empty list means
-   * there is no signal worth passing on, which is the honest answer early.
+   * Only tendencies that differ from what a random layout would produce are
+   * reported. The baselines below were measured over 3,000 random fleets with
+   * `scripts/measure-placement-baseline.mts`; without them a statement like
+   * "at least one ship touches an edge" fires for 96.5% of random opponents and
+   * would be passed to the model as a finding about every single one.
+   *
+   * An empty list means there is no signal worth stating, which is the honest
+   * answer for most opponents.
    */
   summarize(options: { window?: number } = {}): string[] {
     const window = options.window ?? 20;
     const recent = this.records.slice(-window);
-    if (recent.length < 3) return [];
+    if (recent.length < MIN_GAMES_FOR_SUMMARY) return [];
 
     const total = recent.length;
     const summaries: string[] = [];
 
-    // Placement habits.
-    const edgeGames = recent.filter((r) =>
-      r.opponentFleet.some((ship) => ship.cells.some((c) => this.isEdge(c))),
-    ).length;
-    if (edgeGames >= total * 0.6) {
+    // Placement: how much of the fleet hugs the edge, against a 0.438 baseline.
+    const edgeFractions = recent.map((r) => {
+      const onEdge = r.opponentFleet.filter((ship) => ship.cells.some((c) => this.isEdge(c)));
+      return r.opponentFleet.length > 0 ? onEdge.length / r.opponentFleet.length : 0;
+    });
+    const meanEdgeFraction = average(edgeFractions);
+    if (meanEdgeFraction >= BASELINE.edgeFraction + MARGIN.fraction) {
       summaries.push(
-        `the opponent placed at least one ship against the edge of the board in ${edgeGames} of the last ${total} games`,
+        `over the last ${total} games the opponent placed more of its fleet against the edges than usual`,
       );
-    } else if (edgeGames <= total * 0.25) {
+    } else if (meanEdgeFraction <= BASELINE.edgeFraction - MARGIN.fraction) {
       summaries.push(
-        `the opponent kept every ship away from the edge in ${total - edgeGames} of the last ${total} games`,
-      );
-    }
-
-    const centreGames = recent.filter((r) =>
-      r.opponentFleet.some((ship) => ship.cells.some((c) => this.isCentre(c))),
-    ).length;
-    if (centreGames >= total * 0.6) {
-      summaries.push(
-        `the opponent placed a ship in the middle of the board in ${centreGames} of the last ${total} games`,
+        `over the last ${total} games the opponent kept its fleet away from the edges more than usual`,
       );
     }
 
+    // Orientation, against a 0.527 baseline for a horizontal majority.
     const horizontalGames = recent.filter(
       (r) =>
         r.opponentFleet.filter((s) => s.orientation === 'horizontal').length >
         r.opponentFleet.length / 2,
     ).length;
-    if (horizontalGames >= total * 0.65) {
+    const horizontalRate = horizontalGames / total;
+    if (horizontalRate >= BASELINE.horizontalMajority + MARGIN.rate) {
       summaries.push(
         `the opponent placed most ships horizontally in ${horizontalGames} of the last ${total} games`,
       );
-    } else if (horizontalGames <= total * 0.35) {
+    } else if (horizontalRate <= BASELINE.horizontalMajority - MARGIN.rate) {
       summaries.push(
         `the opponent placed most ships vertically in ${total - horizontalGames} of the last ${total} games`,
       );
     }
 
-    // Which quadrant the opponent favours for placement.
+    // Quadrant preferences. `favouriteQuadrant` already requires a clear lead
+    // over an even split, so these are not tautologies.
     const favouriteQuadrant = this.favouriteQuadrant(
       recent.flatMap((r) => r.opponentFleet.flatMap((s) => s.cells)),
     );
@@ -113,7 +132,6 @@ export class OpponentHistory {
       summaries.push(`the opponent most often places ships in the ${favouriteQuadrant} of the board`);
     }
 
-    // Firing habits: where they open, and which region they favour.
     const openingCells = recent
       .map((r) => r.opponentShots[0])
       .filter((c): c is Coord => c !== undefined);
@@ -127,10 +145,10 @@ export class OpponentHistory {
       summaries.push(`the opponent concentrates its early shots in the ${shotQuadrant} of the board`);
     }
 
-    const repeatedOpenings = mostCommon(openingCells.map(coordToLabel));
-    if (repeatedOpenings && repeatedOpenings.count >= Math.max(3, total * 0.4)) {
+    const repeatedOpening = mostCommon(openingCells.map(coordToLabel));
+    if (repeatedOpening && repeatedOpening.count >= Math.max(3, total * 0.4)) {
       summaries.push(
-        `the opponent opened at ${repeatedOpenings.value} in ${repeatedOpenings.count} of the last ${total} games`,
+        `the opponent opened at ${repeatedOpening.value} in ${repeatedOpening.count} of the last ${total} games`,
       );
     }
 
@@ -191,17 +209,6 @@ export class OpponentHistory {
     );
   }
 
-  private isCentre(coord: Coord): boolean {
-    const rowMargin = this.config.rows / 4;
-    const colMargin = this.config.cols / 4;
-    return (
-      coord.row >= rowMargin &&
-      coord.row < this.config.rows - rowMargin &&
-      coord.col >= colMargin &&
-      coord.col < this.config.cols - colMargin
-    );
-  }
-
   /** Names the quadrant holding a clear majority of the given cells, if any. */
   private favouriteQuadrant(cells: Coord[]): string | undefined {
     if (cells.length < 6) return undefined;
@@ -225,6 +232,11 @@ export class OpponentHistory {
 
 function blankGrid(config: GameConfig): number[][] {
   return Array.from({ length: config.rows }, () => Array.from({ length: config.cols }, () => 0));
+}
+
+function average(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
 function mostCommon(values: string[]): { value: string; count: number } | undefined {
