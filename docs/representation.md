@@ -115,6 +115,32 @@ To fill this in, set `AI_GATEWAY_API_KEY` and run the command above. The output 
 and the model version it was produced against go here. Results are only comparable
 within a single model version.
 
+## The free tier will not sustain this benchmark
+
+The first live run of this harness lost 21 of 24 positions to
+`GatewayRateLimitError: Free tier requests on this model are rate-limited`. The
+three surviving samples per representation were meaningless, and presenting them
+as a comparison would have been worse than reporting nothing.
+
+The documented limits - 250,000 tokens/sec and 1,200 requests/min, "adjusting
+dynamically" - describe the paid service. The free tier is far tighter and the
+docs do not state by how much, so no number is claimed here.
+
+Two mitigations are built in, and neither fully solves it:
+
+- `--minIntervalMs` paces requests (default 1500ms). Requests are chained rather
+  than timestamp-checked, so parallel callers queue instead of all firing at once.
+- A 429 gets its own retries with doubling backoff, on top of the AI SDK's
+  `maxRetries`. Only rate limits are waited out; other errors still fail fast.
+
+With pacing the loss rate drops substantially but does not reach zero. A full
+Phase 1 benchmark - five strategies over twenty games, roughly 4,000 sequential
+calls - needs paid credits. Budget accordingly, and set a Gateway budget first.
+
+At the observed rate of $0.042 per million input tokens with output free, and
+roughly 400-6,000 input tokens per call depending on representation, the cost is
+small; the constraint is request rate, not money.
+
 ## Limits found while building this
 
 Recorded from the docs, not inferred:
