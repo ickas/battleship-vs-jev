@@ -88,6 +88,11 @@ export interface JevResponse {
   /** What the call was actually billed, in USD (`cost`). */
   billedCostUsd?: number;
   /**
+   * Cost at the published rate, set only when the transport reports no cost of
+   * its own (the TypeSafe API does not). An estimate, not a billed figure.
+   */
+  estimatedCostUsd?: number;
+  /**
    * End-to-end latency of the successful attempt, measured by the client and
    * including Gateway overhead. Excludes any client-side backoff waiting,
    * which is reported separately as `retryWaitMs`.

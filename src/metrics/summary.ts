@@ -1,4 +1,5 @@
 import type { GameResult } from '../engine/game.js';
+import { formatUsd } from '../jev/pricing.js';
 
 /** Aggregated results for one strategy across a batch of games. */
 export interface StrategySummary {
@@ -106,7 +107,9 @@ export function summarize(results: GameResult[]): StrategySummary {
 export function formatComparisonTable(summaries: StrategySummary[]): string {
   const sorted = [...summaries].sort((a, b) => a.meanShots - b.meanShots);
 
-  const headers = ['strategy', 'games', 'mean', 'median', 'sd', 'min', 'max', 'acc', 'ms/shot', 'tok/game'];
+  const headers = [
+    'strategy', 'games', 'mean', 'median', 'sd', 'min', 'max', 'acc', 'ms/shot', 'tok/game', 'cost',
+  ];
   const rows = sorted.map((s) => [
     s.strategyName,
     String(s.games),
@@ -118,6 +121,7 @@ export function formatComparisonTable(summaries: StrategySummary[]): string {
     `${(s.accuracy * 100).toFixed(0)}%`,
     s.meanShotLatencyMs >= 1 ? s.meanShotLatencyMs.toFixed(0) : '<1',
     s.meanTokensPerGame > 0 ? s.meanTokensPerGame.toFixed(0) : '-',
+    s.totalCostUsd > 0 ? formatUsd(s.totalCostUsd) : '-',
   ]);
 
   const widths = headers.map((header, i) =>

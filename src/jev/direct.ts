@@ -10,6 +10,7 @@ import type {
   ScoreAnswer,
 } from './types.js';
 import { assertRequestIsWithinLimits, isRateLimitError } from './gateway.js';
+import { estimateCostUsd } from './pricing.js';
 
 /**
  * Talks to the TypeSafe API directly, instead of going through Vercel AI Gateway.
@@ -122,17 +123,22 @@ export class DirectJevClient implements JevClient {
         result.answers as Record<string, unknown>,
       );
 
+      const usage = {
+        inputTokens: result.usage?.input_tokens,
+        outputTokens: result.usage?.output_tokens,
+        totalTokens:
+          result.usage === undefined
+            ? undefined
+            : result.usage.input_tokens + result.usage.output_tokens,
+      };
+
       const response: JevResponse = {
         answers,
         confidence,
-        usage: {
-          inputTokens: result.usage?.input_tokens,
-          outputTokens: result.usage?.output_tokens,
-          totalTokens:
-            result.usage === undefined
-              ? undefined
-              : result.usage.input_tokens + result.usage.output_tokens,
-        },
+        usage,
+        // TypeSafe reports no cost, so this is the published rate applied to
+        // the usage it does report. Labelled as an estimate everywhere it shows.
+        estimatedCostUsd: estimateCostUsd(usage),
         // Unlike the Gateway, this is the model that actually answered.
         modelId: result.model ?? this.model,
         latencyMs,

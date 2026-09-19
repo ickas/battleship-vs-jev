@@ -38,6 +38,7 @@ function makeResult(overrides: Partial<GameResult> = {}): GameResult {
     totalInputTokens: 50 * shots,
     totalOutputTokens: 2 * shots,
     totalCostUsd: 0.000012 * shots,
+    costIsEstimated: false,
     generationIds: Array.from({ length: shots }, (_, i) => `gen_${i}`),
     perfectScore: 17,
     ...overrides,

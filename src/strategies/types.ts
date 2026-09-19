@@ -28,8 +28,10 @@ export interface ShotDecision {
   modelId?: string;
   /** Gateway generation id, for cross-checking against the Gateway request logs. */
   generationId?: string;
-  /** List-price cost of the call in USD, as reported by the Gateway. */
+  /** List-price cost of the call in USD. */
   marketCostUsd?: number;
+  /** True when the cost above was computed from the published rate, not reported. */
+  costIsEstimated?: boolean;
   /** Attempts the call took, and time spent waiting out rate limits. */
   attempts?: number;
   retryWaitMs?: number;

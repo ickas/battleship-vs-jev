@@ -107,7 +107,9 @@ export function decisionMetadata(response: JevResponse, questionId: string) {
     confidence: response.confidence[questionId],
     modelId: response.modelId,
     generationId: response.generationId,
-    marketCostUsd: response.marketCostUsd,
+    // Prefer a cost the transport reported; fall back to the published rate.
+    marketCostUsd: response.marketCostUsd ?? response.estimatedCostUsd,
+    costIsEstimated: response.marketCostUsd === undefined,
     attempts: response.attempts,
     retryWaitMs: response.retryWaitMs,
   };

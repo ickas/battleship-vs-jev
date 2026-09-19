@@ -307,8 +307,12 @@ Jev's own probabilities.
   client. It includes Gateway overhead and is not a measure of Jev alone. It covers the
   successful attempt only: time spent sleeping between rate-limit retries is reported
   separately as `retryWaitMs`, so backoff never inflates a benchmark figure.
-- Costs shown are the Gateway's own `marketCost` for each call, read from the response.
-  No price is hardcoded anywhere.
+- Costs prefer the figure the transport reports. The Gateway returns a per-call
+  `marketCost`; the TypeSafe API returns token usage but no cost, so on the direct
+  transport cost is computed from the published rate and labelled **est.** everywhere
+  it appears. The rate lives in one place, `src/jev/pricing.ts`, with its source and
+  the date it was confirmed, and a test asserts it still reproduces a cost the Gateway
+  actually billed.
 - Results are only comparable within a single model version. Every result file records
   the version that answered.
 - The self-play history test refuses to claim an effect below 10 decided games, or

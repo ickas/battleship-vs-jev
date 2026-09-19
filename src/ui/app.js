@@ -14,6 +14,14 @@ const el = (id) => document.getElementById(id);
  */
 const URL_KEYS = ['strategy', 'representation', 'layout', 'seed', 'topK', 'temperature'];
 
+/** Keeps very small figures legible rather than rounding them to zero. */
+function formatUsd(amount) {
+  if (amount === 0) return '$0';
+  if (amount < 0.01) return `$${amount.toFixed(5)}`;
+  if (amount < 1) return `$${amount.toFixed(4)}`;
+  return `$${amount.toFixed(2)}`;
+}
+
 function readUrlState() {
   const params = new URLSearchParams(window.location.search);
   const out = {};
@@ -368,6 +376,18 @@ function render(game) {
     ? `${(game.totalLatencyMs / 1000).toFixed(1)} s`
     : '-';
   el('m-tokens').textContent = game.totalInputTokens ? game.totalInputTokens.toLocaleString() : '-';
+
+  // Cost: reported by the transport where possible, otherwise computed from the
+  // published rate. The label says which, so an estimate is never read as a bill.
+  const cost = game.totalCostUsd ?? 0;
+  el('m-cost').textContent = cost > 0 ? formatUsd(cost) : '-';
+  el('m-cost-label').textContent = game.costIsEstimated ? 'Cost (est.)' : 'Cost';
+  el('m-cost-label').title = game.costIsEstimated
+    ? 'Estimated from the published rate of $0.042 per million input tokens, ' +
+      'because the TypeSafe API does not report a cost per call.'
+    : 'Reported by the Gateway for these calls.';
+  el('m-cost-shot').textContent =
+    cost > 0 && game.shots > 0 ? formatUsd(cost / game.shots) : '-';
 
   const confidences = game.history.map((h) => h.confidence).filter((c) => typeof c === 'number');
   el('m-confidence').textContent = confidences.length

@@ -114,6 +114,7 @@ export class GameSession {
       modelId: decision.modelId,
       generationId: decision.generationId,
       marketCostUsd: decision.marketCostUsd,
+      costIsEstimated: decision.costIsEstimated,
       attempts: decision.attempts,
       retryWaitMs: decision.retryWaitMs,
     };
@@ -148,6 +149,9 @@ export class GameSession {
       modelIds: [...new Set(this.records.map((r) => r.modelId).filter(Boolean))],
       generationIds: this.records.map((r) => r.generationId).filter(Boolean),
       totalCostUsd: this.records.reduce((sum, r) => sum + (r.marketCostUsd ?? 0), 0),
+      costIsEstimated: this.records.some((r) => r.costIsEstimated),
+      /** Cost of the most recent shot, for the metrics panel. */
+      lastShotCostUsd: this.records.at(-1)?.marketCostUsd,
       history: this.records.map((r) => ({
         index: r.index,
         label: r.label,
