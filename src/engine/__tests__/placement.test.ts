@@ -98,6 +98,58 @@ describe('validateFleet', () => {
     expect(validateFleet(fleet, config).join(' ')).toContain('leaves the board');
   });
 
+  it('rejects a ship whose cells repeat a coordinate', () => {
+    // Such a ship covers fewer distinct cells than its length, so it could
+    // never be sunk and the game would be unwinnable.
+    const fleet = valid();
+    fleet[0] = {
+      ...fleet[0]!,
+      cells: [
+        { row: 0, col: 0 },
+        { row: 0, col: 0 },
+        { row: 0, col: 1 },
+        { row: 0, col: 2 },
+        { row: 0, col: 3 },
+      ],
+    };
+    expect(validateFleet(fleet, config).join(' ')).toContain('straight horizontal run');
+  });
+
+  it('rejects a ship whose cells are scattered rather than contiguous', () => {
+    const fleet = valid();
+    fleet[0] = {
+      ...fleet[0]!,
+      cells: [
+        { row: 0, col: 0 },
+        { row: 0, col: 2 },
+        { row: 0, col: 4 },
+        { row: 0, col: 6 },
+        { row: 0, col: 8 },
+      ],
+    };
+    expect(validateFleet(fleet, config).join(' ')).toContain('straight horizontal run');
+  });
+
+  it('rejects cells that disagree with the declared bow or orientation', () => {
+    const fleet = valid();
+    fleet[0] = { ...fleet[0]!, bow: { row: 5, col: 5 } };
+    expect(validateFleet(fleet, config).join(' ')).toContain('straight horizontal run');
+
+    const flipped = valid();
+    flipped[0] = { ...flipped[0]!, orientation: 'vertical' };
+    expect(validateFleet(flipped, config).join(' ')).toContain('straight vertical run');
+  });
+
+  it('accepts every ship produced by toPlacedShip', () => {
+    // The constructor and the validator must agree, or valid play breaks.
+    for (const orientation of ['horizontal', 'vertical'] as const) {
+      const fleet = config.fleet.map((spec, i) =>
+        toPlacedShip(spec, orientation === 'horizontal' ? { row: i * 2, col: 0 } : { row: 0, col: i * 2 }, orientation),
+      );
+      expect(validateFleet(fleet, config)).toEqual([]);
+    }
+  });
+
   it('rejects touching ships only in strict mode', () => {
     const fleet = [
       toPlacedShip(strict.fleet[0]!, { row: 0, col: 0 }, 'horizontal'),

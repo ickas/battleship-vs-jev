@@ -1,4 +1,11 @@
-import { allCoords, coordKey, inBounds, shipCells, surroundingCells } from './coords.js';
+import {
+  allCoords,
+  coordKey,
+  coordsEqual,
+  inBounds,
+  shipCells,
+  surroundingCells,
+} from './coords.js';
 import type { Rng } from './rng.js';
 import type { Coord, GameConfig, Orientation, PlacedShip, ShipSpec } from './types.js';
 
@@ -77,6 +84,22 @@ export function validateFleet(fleet: PlacedShip[], config: GameConfig): string[]
       errors.push(`Unknown ship id "${ship.id}"`);
     } else if (spec.length !== ship.length || ship.cells.length !== spec.length) {
       errors.push(`Ship "${ship.id}" must occupy ${spec.length} cells, got ${ship.cells.length}`);
+    } else {
+      // The cells must be exactly the straight run implied by bow, orientation
+      // and length. Without this a fleet can carry duplicated or scattered
+      // cells: it would pass every other check, yet the ship could never be
+      // sunk, because sinking needs `length` distinct cells hit.
+      const expectedCells = shipCells(ship.bow, spec.length, ship.orientation);
+      const matches =
+        ship.cells.length === expectedCells.length &&
+        ship.cells.every((cell, i) => coordsEqual(cell, expectedCells[i]!));
+      if (!matches) {
+        errors.push(
+          `Ship "${ship.id}" cells do not form a straight ${ship.orientation} run of ${spec.length} from ${
+            `(${ship.bow.row},${ship.bow.col})`
+          }`,
+        );
+      }
     }
 
     for (const cell of ship.cells) {

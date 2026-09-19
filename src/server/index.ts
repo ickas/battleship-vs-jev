@@ -10,6 +10,7 @@ import { REPRESENTATIONS } from '../jev/representations.js';
 import { validateFleet } from '../engine/placement.js';
 import { makeConfig } from '../engine/config.js';
 import type { PlacedShip } from '../engine/types.js';
+import { rebuildFleet } from './fleetInput.js';
 import { GameSession } from './gameSession.js';
 import { loadEnv } from '../env.js';
 
@@ -120,15 +121,28 @@ const server = createServer(async (req, res) => {
 
       const allowTouching = body.allowTouching !== false;
 
-      // A player-supplied layout must pass the same validation as any other.
+      // A player-supplied layout is rebuilt from its bow and orientation rather
+      // than trusted: client-sent `cells` are ignored entirely, so a malformed
+      // or hand-edited payload cannot reach the engine.
       let playerFleet: PlacedShip[] | undefined;
       if (Array.isArray(body.fleet)) {
-        const errors = validateFleet(body.fleet as PlacedShip[], makeConfig({ allowTouching }));
+        const config = makeConfig({ allowTouching });
+        let rebuilt: PlacedShip[];
+        try {
+          rebuilt = rebuildFleet(body.fleet, config);
+        } catch (error) {
+          sendJson(res, 400, {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
+
+        const errors = validateFleet(rebuilt, config);
         if (errors.length > 0) {
           sendJson(res, 400, { error: `Invalid fleet layout: ${errors.join('; ')}` });
           return;
         }
-        playerFleet = body.fleet as PlacedShip[];
+        playerFleet = rebuilt;
       }
 
       const session = new GameSession({
@@ -202,11 +216,19 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`Battleship vs. Jev running at http://localhost:${PORT}`);
-  console.log(
-    hasApiKey
-      ? 'AI_GATEWAY_API_KEY found: Jev strategies will make live Gateway calls.'
-      : 'AI_GATEWAY_API_KEY not set: Jev strategies are unavailable. Code baselines and mock mode still work.',
-  );
-});
+export { server };
+
+// Only listen when run directly, so the module can be imported by tests.
+const isEntryPoint = process.argv[1] !== undefined
+  && import.meta.url === new URL(`file://${process.argv[1]}`).href;
+
+if (isEntryPoint) {
+  server.listen(PORT, () => {
+    console.log(`Battleship vs. Jev running at http://localhost:${PORT}`);
+    console.log(
+      hasApiKey
+        ? 'AI_GATEWAY_API_KEY found: Jev strategies will make live Gateway calls.'
+        : 'AI_GATEWAY_API_KEY not set: Jev strategies are unavailable. Code baselines and mock mode still work.',
+    );
+  });
+}
