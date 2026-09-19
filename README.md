@@ -189,6 +189,17 @@ The server ignores a `mock` field in a request body, so no page, link or stray
 click can turn it on, and the UI shows a banner whenever it is active. Use it
 for demos and UI work without spending calls; never for results.
 
+| `JEV_MOCK` | result |
+| --- | --- |
+| unset (the default), empty | **off** — the real model |
+| `0`, `false`, `no` | off |
+| `1`, `true`, `yes` (any case) | **on** — code-side density |
+| anything else | off |
+
+It fails safe in one direction only: anything unrecognised leaves the real model
+in place, so a typo costs an API call rather than the validity of a run.
+Surrounding whitespace and quotes in `.env` are ignored.
+
 ## Architecture
 
 ```

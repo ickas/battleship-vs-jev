@@ -13,6 +13,7 @@ import { makeConfig } from '../engine/config.js';
 import { LAYOUT_DESCRIPTIONS, LAYOUT_FAMILIES, type LayoutFamily } from '../engine/layouts.js';
 import type { PlacedShip } from '../engine/types.js';
 import { rebuildFleet } from './fleetInput.js';
+import { isMockEnabled } from './mockMode.js';
 import { GameSession } from './gameSession.js';
 import { loadEnv } from '../env.js';
 
@@ -81,7 +82,7 @@ const hasApiKey = live !== undefined;
  * experimental dimension; this one is a "these are not results" flag, so it is
  * deliberately not something a page, a link or a stray click can turn on.
  */
-const MOCK_MODE = /^(1|true|yes)$/i.test(process.env.JEV_MOCK ?? '');
+const MOCK_MODE = isMockEnabled(process.env.JEV_MOCK);
 const mockClient = new MockJevClient({ latencyMs: 120 });
 
 const sessions = new Map<string, GameSession>();
