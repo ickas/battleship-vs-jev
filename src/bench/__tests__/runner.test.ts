@@ -6,7 +6,7 @@ import { DensityStrategy } from '../../strategies/density.js';
 import { RandomStrategy } from '../../strategies/random.js';
 import type { BoardView } from '../../engine/types.js';
 import type { ShotDecision, Strategy } from '../../strategies/types.js';
-import { runBench } from '../runner.js';
+import { assessPairing, runBench } from '../runner.js';
 import { buildStrategy, ALL_STRATEGY_IDS } from '../strategies.js';
 import { MockJevClient } from '../../jev/mock.js';
 
@@ -144,6 +144,48 @@ describe('runBench', () => {
       onProgress: (event) => events.push(event.gameIndex),
     });
     expect(events).toEqual([0, 1, 2]);
+  });
+});
+
+describe('pairing integrity', () => {
+  it('reports a clean run as paired', async () => {
+    const report = await runBench({
+      config,
+      strategies: [new RandomStrategy(), new DensityStrategy()],
+      games: 3,
+      seed: 5,
+    });
+    expect(report.paired).toBe(true);
+    expect(report.pairingNote).toBeUndefined();
+    expect(report.completedByStrategy.random).toEqual([0, 1, 2]);
+  });
+
+  it('flags a run where one strategy dropped games', async () => {
+    // A strategy stopped by failures played fewer layouts, so the means in the
+    // table are no longer comparable and the report must say so.
+    const report = await runBench({
+      config,
+      strategies: [new DensityStrategy(), new BrokenStrategy()],
+      games: 4,
+      failureLimit: 2,
+    });
+
+    expect(report.paired).toBe(false);
+    expect(report.pairingNote).toMatch(/NOT a paired comparison/);
+    expect(report.pairingNote).toMatch(/broken completed 0\/4/);
+  });
+
+  it('assessPairing names every short strategy', () => {
+    expect(assessPairing({ a: [0, 1, 2], b: [0, 1, 2] }, 3)).toEqual({ paired: true });
+
+    const result = assessPairing({ a: [0, 1, 2], b: [0], c: [] }, 3);
+    expect(result.paired).toBe(false);
+    expect(result.pairingNote).toMatch(/b completed 1\/3/);
+    expect(result.pairingNote).toMatch(/c completed 0\/3/);
+  });
+
+  it('treats an empty run as trivially paired', () => {
+    expect(assessPairing({}, 5)).toEqual({ paired: true });
   });
 });
 

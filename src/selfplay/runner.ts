@@ -48,8 +48,15 @@ export interface SelfPlayReport {
   /** Win rate over the first and second half, to show any trend as history builds. */
   historyWinRateFirstHalf: number;
   historyWinRateSecondHalf: number;
-  /** Games in which the history player actually had signals to use. */
-  gamesWithHistorySignal: number;
+  /** Games where the history player had signals available when placing its fleet. */
+  gamesWithPlacementSignal: number;
+  /** Games where the history player had signals available when choosing shots. */
+  gamesWithFiringSignal: number;
+  /**
+   * Games excluded from the verdict because a Jev call failed and a random shot
+   * was substituted. A rate-limited call must not be scored as a strategy loss.
+   */
+  contaminatedGames: number;
   errors: string[];
   modelIds: string[];
   perGame: Array<{
@@ -89,6 +96,7 @@ export async function runSelfPlay(options: SelfPlayOptions): Promise<SelfPlayRep
 
   const withHistory = makePlayer(HISTORY_PLAYER, true);
   const control = makePlayer(CONTROL_PLAYER, false);
+  const historyStrategy = withHistory.strategy as HistoryAwareStrategy;
 
   const report: SelfPlayReport = {
     games,
@@ -101,7 +109,9 @@ export async function runSelfPlay(options: SelfPlayOptions): Promise<SelfPlayRep
     meanShotsWithoutHistory: 0,
     historyWinRateFirstHalf: 0,
     historyWinRateSecondHalf: 0,
-    gamesWithHistorySignal: 0,
+    gamesWithPlacementSignal: 0,
+    gamesWithFiringSignal: 0,
+    contaminatedGames: 0,
     errors: [],
     modelIds: [],
     perGame: [],
@@ -123,6 +133,16 @@ export async function runSelfPlay(options: SelfPlayOptions): Promise<SelfPlayRep
       const result = await playMatch({ config, players, histories, rng, abortSignal });
 
       report.completed++;
+      report.errors.push(...result.errors);
+      if (result.usedHistory[HISTORY_PLAYER]) report.gamesWithPlacementSignal++;
+      if (historyStrategy.lastShotUsedHistory) report.gamesWithFiringSignal++;
+
+      if (result.contaminated) {
+        // Counted, reported, but kept out of every figure the verdict uses.
+        report.contaminatedGames++;
+        continue;
+      }
+
       if (result.winnerId === HISTORY_PLAYER) report.winsWithHistory++;
       else if (result.winnerId === CONTROL_PLAYER) report.winsWithoutHistory++;
       else report.draws++;
@@ -130,8 +150,6 @@ export async function runSelfPlay(options: SelfPlayOptions): Promise<SelfPlayRep
       winsInOrder.push(result.winnerId === HISTORY_PLAYER);
       shotsWithHistory.push(result.shotsByPlayer[HISTORY_PLAYER] ?? 0);
       shotsWithoutHistory.push(result.shotsByPlayer[CONTROL_PLAYER] ?? 0);
-      if (result.usedHistory[HISTORY_PLAYER]) report.gamesWithHistorySignal++;
-      report.errors.push(...result.errors);
 
       report.perGame.push({
         index: i,
@@ -184,13 +202,16 @@ export function historyEffect(report: SelfPlayReport): {
   verdict: string;
 } {
   const decided = report.winsWithHistory + report.winsWithoutHistory;
+  const excluded = report.contaminatedGames ?? 0;
+  const suffix = excluded > 0 ? ` (${excluded} contaminated game(s) excluded)` : '';
+
   if (decided < 10) {
     return {
       winRate: report.historyWinRate,
       decidedGames: decided,
       z: 0,
       significant: false,
-      verdict: `only ${decided} decided games: far too few to tell whether history helped`,
+      verdict: `only ${decided} decided games: far too few to tell whether history helped${suffix}`,
     };
   }
 
@@ -203,7 +224,7 @@ export function historyEffect(report: SelfPlayReport): {
     z,
     significant,
     verdict: significant
-      ? `history changed the outcome: ${(report.historyWinRate * 100).toFixed(1)}% win rate over ${decided} games (z = ${z.toFixed(2)})`
-      : `no measurable effect: ${(report.historyWinRate * 100).toFixed(1)}% win rate over ${decided} games is within noise (z = ${z.toFixed(2)})`,
+      ? `history changed the outcome: ${(report.historyWinRate * 100).toFixed(1)}% win rate over ${decided} games (z = ${z.toFixed(2)})${suffix}`
+      : `no measurable effect: ${(report.historyWinRate * 100).toFixed(1)}% win rate over ${decided} games is within noise (z = ${z.toFixed(2)})${suffix}`,
   };
 }

@@ -111,6 +111,10 @@ async function main(): Promise<void> {
   console.log('\n');
   console.log(formatComparisonTable(report.summaries));
 
+  if (!report.paired) {
+    console.log(`\nWARNING: ${report.pairingNote}`);
+  }
+
   if (report.errors.length > 0) {
     console.log(`\n${report.errors.length} error(s):`);
     for (const error of report.errors.slice(0, 10)) {

@@ -37,6 +37,15 @@ export interface BenchReport {
   summaries: StrategySummary[];
   results: GameResult[];
   errors: Array<{ strategyId: string; gameIndex: number; error: string }>;
+  /**
+   * Whether every strategy completed the same set of games. When false the
+   * means below are computed over different layouts and are NOT a paired
+   * comparison; `pairingNote` says which strategies are short.
+   */
+  paired: boolean;
+  pairingNote?: string;
+  /** Game indices each strategy actually completed. */
+  completedByStrategy: Record<string, number[]>;
 }
 
 /**
@@ -107,6 +116,16 @@ export async function runBench(options: BenchOptions): Promise<BenchReport> {
     if (strategyResults.length > 0) summaries.push(summarize(strategyResults));
   }
 
+  const completedByStrategy: Record<string, number[]> = {};
+  for (const strategy of strategies) {
+    completedByStrategy[strategy.id] = results
+      .filter((r) => r.strategyId === strategy.id)
+      .map((r) => r.seed - seed)
+      .sort((a, b) => a - b);
+  }
+
+  const { paired, pairingNote } = assessPairing(completedByStrategy, games);
+
   return {
     startedAt,
     finishedAt: new Date().toISOString(),
@@ -116,6 +135,37 @@ export async function runBench(options: BenchOptions): Promise<BenchReport> {
     summaries,
     results,
     errors,
+    paired,
+    pairingNote,
+    completedByStrategy,
+  };
+}
+
+/**
+ * A paired comparison only holds if every strategy played every layout. A
+ * strategy that lost games to rate limits is compared over a different subset,
+ * which can move a mean by more than the strategies differ - so say so loudly
+ * rather than printing a table that looks comparable.
+ */
+export function assessPairing(
+  completedByStrategy: Record<string, number[]>,
+  games: number,
+): { paired: boolean; pairingNote?: string } {
+  const entries = Object.entries(completedByStrategy);
+  if (entries.length === 0) return { paired: true };
+
+  const short = entries.filter(([, indices]) => indices.length < games);
+  if (short.length === 0) return { paired: true };
+
+  const detail = short
+    .map(([id, indices]) => `${id} completed ${indices.length}/${games}`)
+    .join('; ');
+
+  return {
+    paired: false,
+    pairingNote:
+      `NOT a paired comparison: ${detail}. Means are computed over different ` +
+      'layout sets and should not be compared directly.',
   };
 }
 

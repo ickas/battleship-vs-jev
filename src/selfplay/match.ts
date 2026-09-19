@@ -31,6 +31,12 @@ export interface PlayerConfig {
 
 export interface MatchResult {
   winnerId: string | undefined;
+  /**
+   * True when a Jev call failed mid-game and a random shot was substituted.
+   * Such a game is not a clean comparison and is excluded from the history
+   * verdict, since a rate-limited call would otherwise read as a strategy loss.
+   */
+  contaminated: boolean;
   /** Shots each player needed. Lower is better. */
   shotsByPlayer: Record<string, number>;
   hitsByPlayer: Record<string, number>;
@@ -61,6 +67,7 @@ export async function playMatch(options: MatchOptions): Promise<MatchResult> {
   const fleets: Record<string, PlacedShip[]> = {};
   const usedHistory: Record<string, boolean> = {};
   const errors: string[] = [];
+  let contaminatedPlacement = false;
 
   for (const player of players) {
     if (player.jevPlacement) {
@@ -76,6 +83,7 @@ export async function playMatch(options: MatchOptions): Promise<MatchResult> {
         usedHistory[player.id] = placement.usedHistory;
         continue;
       } catch (error) {
+        contaminatedPlacement = true;
         errors.push(
           `${player.id} placement failed, fell back to random: ${
             error instanceof Error ? error.message : String(error)
@@ -96,6 +104,7 @@ export async function playMatch(options: MatchOptions): Promise<MatchResult> {
 
   let winnerId: string | undefined;
   let turns = 0;
+  let contaminated = false;
 
   outer: for (let turn = 0; turn < maxTurns; turn++) {
     for (const player of players) {
@@ -118,7 +127,9 @@ export async function playMatch(options: MatchOptions): Promise<MatchResult> {
         board.fire(decision.coord);
         shotsFired[player.id]!.push(decision.coord);
       } catch (error) {
-        // A failed shot costs the turn rather than the match.
+        // A failed shot costs the turn rather than the match, but the game is
+        // no longer a clean measurement of either strategy.
+        contaminated = true;
         errors.push(
           `${player.id} shot failed: ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -149,6 +160,7 @@ export async function playMatch(options: MatchOptions): Promise<MatchResult> {
 
   return {
     winnerId,
+    contaminated: contaminated || contaminatedPlacement,
     shotsByPlayer: {
       [players[0].id]: shotsFired[players[0].id]!.length,
       [players[1].id]: shotsFired[players[1].id]!.length,

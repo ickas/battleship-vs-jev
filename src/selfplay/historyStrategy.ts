@@ -43,6 +43,13 @@ export class HistoryAwareStrategy implements Strategy {
   private readonly temperature: number;
   private readonly historyWeight: number;
 
+  /**
+   * Whether the most recent shot had any history signal to work with. Firing
+   * and placement can differ: placement may have summaries while firing does
+   * not, so the two are reported separately.
+   */
+  lastShotUsedHistory = false;
+
   constructor(options: HistoryAwareOptions) {
     this.client = options.client;
     this.history = options.history;
@@ -91,6 +98,8 @@ export class HistoryAwareStrategy implements Strategy {
     }
 
     const summaries = this.useHistory ? this.history.summarize() : [];
+    this.lastShotUsedHistory =
+      summaries.length > 0 || (this.useHistory && this.history.gameCount >= 3);
     const response = await this.client.ask({
       label: this.useHistory ? 'selfplay.shot.withHistory' : 'selfplay.shot.noHistory',
       state: {

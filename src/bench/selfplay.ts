@@ -61,7 +61,16 @@ async function main(): Promise<void> {
     `Win rate first half  ${(report.historyWinRateFirstHalf * 100).toFixed(1)}%  ` +
       `second half ${(report.historyWinRateSecondHalf * 100).toFixed(1)}%`,
   );
-  console.log(`Games with a usable history signal: ${report.gamesWithHistorySignal}`);
+  console.log(
+    `History signal available: placement in ${report.gamesWithPlacementSignal} games, ` +
+      `firing in ${report.gamesWithFiringSignal}`,
+  );
+  if (report.contaminatedGames > 0) {
+    console.log(
+      `Excluded ${report.contaminatedGames} contaminated game(s): a Jev call failed and a ` +
+        'random shot was substituted, so they are not a clean comparison.',
+    );
+  }
   console.log(`\n${effect.verdict}`);
 
   if (report.errors.length > 0) {

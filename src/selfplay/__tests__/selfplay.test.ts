@@ -206,6 +206,43 @@ describe('runSelfPlay', () => {
   }, 120_000);
 });
 
+describe('contaminated games', () => {
+  it('excludes a game where a shot failed from the verdict', async () => {
+    // A client that always fails forces a random-shot substitution, which is
+    // not a clean measurement of either strategy.
+    const failing = {
+      log: [],
+      stats: { calls: 0, failures: 0, inputTokens: 0, outputTokens: 0, totalLatencyMs: 0 },
+      ask: async () => {
+        throw new Error('rate limited');
+      },
+    };
+
+    const report = await runSelfPlay({
+      config,
+      client: failing,
+      games: 2,
+      seed: 1,
+      jevPlacement: false,
+    });
+
+    expect(report.completed).toBe(2);
+    expect(report.contaminatedGames).toBe(2);
+    // Nothing contaminated reaches the win tally.
+    expect(report.winsWithHistory + report.winsWithoutHistory + report.draws).toBe(0);
+  }, 60_000);
+
+  it('mentions excluded games in the verdict', () => {
+    const effect = historyEffect({
+      winsWithHistory: 3,
+      winsWithoutHistory: 2,
+      historyWinRate: 0.6,
+      contaminatedGames: 7,
+    } as never);
+    expect(effect.verdict).toMatch(/7 contaminated game\(s\) excluded/);
+  });
+});
+
 describe('historyEffect', () => {
   it('refuses to claim an effect from too few games', () => {
     const effect = historyEffect({
