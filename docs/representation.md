@@ -108,12 +108,85 @@ npm run repr -- --positions 24
 
 ## Results
 
-<!-- RESULTS -->
-_Not yet run against the live model._
+Run on 2026-09-19, 18 positions requested, `--minIntervalMs 3000`, model id
+`typesafe-ai/jev`.
 
-To fill this in, set `AI_GATEWAY_API_KEY` and run the command above. The output table
-and the model version it was produced against go here. Results are only comparable
-within a single model version.
+```
+representation        n  hit%  random%  density%  top%  rank  conf   tok
+-------------------  --  ----  -------  --------  ----  ----  ----  ----
+Semantic candidates  12  50.0     11.4      61.1  33.3  36.5  0.50  4842
+Row strings          12  41.7     11.4      61.1  25.0  52.1  0.34  2587
+Per-cell list        14  35.7     11.4      61.1  42.9  27.9  0.34  3476
+```
+
+### What this does show
+
+**Jev is genuinely playing Battleship.** Every representation beats the random
+floor by a wide margin, and that result survives the small sample:
+
+| Representation | hits | binomial p vs random |
+| --- | --- | --- |
+| Semantic candidates | 6/12 | 0.0011 |
+| Row strings | 5/12 | 0.0076 |
+| Per-cell list | 5/14 | 0.0159 |
+
+Picking uniformly among untried cells lands on a live ship 11.4% of the time.
+Jev lands on one three to four times as often. It is reading the board.
+
+**It does not reach the code-optimal pick.** The density baseline scores 61.1%
+on the same positions. Only the per-cell list is significantly below that
+(p = 0.049); the other two are not distinguishable from the ceiling either way,
+which is a statement about the sample size, not about the model.
+
+### What this does not show
+
+**It does not identify a best representation.** The apparent ranking is noise.
+No pair is distinguishable:
+
+| Comparison | Fisher exact, two-sided |
+| --- | --- |
+| Semantic vs row strings | p = 1.000 |
+| Semantic vs per-cell list | p = 0.692 |
+| Row strings vs per-cell list | p = 1.000 |
+
+The 95% confidence intervals overlap almost completely: semantic
+[25.4%, 74.6%], row strings [19.3%, 68.0%], per-cell list [16.3%, 61.2%].
+Separating a true 50% from a true 36% at 80% power would need roughly **187
+positions per representation**. This run scored 12 to 14.
+
+The secondary columns disagree with the primary one, which is what noise looks
+like: the per-cell list has the *worst* hit rate but the *best* mean density
+rank (27.9) and the highest agreement with the code-optimal pick (42.9%). With
+this sample none of that is interpretable.
+
+**The plan says to pick the representation based on data. The data does not
+support a pick, so no pick is claimed here.** The defaults in the code are
+chosen on reasoning rather than evidence, and are labelled as such:
+
+- `jevPure` defaults to `cellList`, because it is the only representation that
+  contains no code-computed judgement. That is a decision about what the
+  benchmark *measures*, not about what scores best.
+- `jevHybrid` defaults to `semantic`, because its whole design is that code
+  describes a shortlist. Using anything else would make the strategy incoherent.
+
+### Caveats on this specific run
+
+- **The comparison is not fully paired.** Rate limiting cost different positions
+  for each representation (14, 12 and 12 scored of 18), so they did not all
+  answer the same set. The harness reports positions scored per representation
+  for exactly this reason.
+- **The latency column is unusable and has been omitted above.** This run
+  predates the fix that excludes client-side rate-limit backoff from
+  `latencyMs`, so the figures in the raw output (12.4s to 23.5s) are mostly
+  sleep, not Gateway round-trip time. Re-run to get real latency.
+- 16 of 54 calls were lost to rate limits, and one to a client-side timeout on
+  the semantic representation, which sends the largest state.
+
+### What would settle it
+
+Roughly 200 positions per representation, which is about 600 calls. That needs
+paid Gateway credits; see below. Until then the representation question is open,
+and the code says so rather than implying it was answered.
 
 ## The free tier will not sustain this benchmark
 

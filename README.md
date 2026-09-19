@@ -87,6 +87,21 @@ Compares three ways of describing the board to Jev on a fixed set of mid-game
 positions. See [docs/representation.md](docs/representation.md) for the method and
 results.
 
+**First result (2026-09-19):** all three representations beat the random floor by a
+wide margin — Jev is reading the board, not guessing — but none of them is
+distinguishable from the others at this sample size, and none reaches the code-side
+density baseline. The representation question is therefore still open; the defaults in
+the code are chosen on reasoning, not on evidence, and are labelled that way.
+
+| | hit% | vs random floor (11.4%) | vs each other |
+| --- | --- | --- | --- |
+| Semantic candidates | 50.0% (6/12) | p = 0.0011 | not distinguishable |
+| Row strings | 41.7% (5/12) | p = 0.0076 | not distinguishable |
+| Per-cell list | 35.7% (5/14) | p = 0.0159 | not distinguishable |
+
+Separating these would need roughly 200 positions each, which the free tier cannot
+supply.
+
 ### Self-play (Phase 2)
 
 ```bash
