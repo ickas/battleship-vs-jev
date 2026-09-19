@@ -87,6 +87,26 @@ the output says so, and every mock response is tagged `mock-not-a-model`.
 npm run bench -- --games 20 --strategies density,jevHybrid --representation semantic
 ```
 
+```bash
+npm run bench -- --layouts mixed --transport direct --games 60
+```
+
+**The layout family changes the answer**, so it is a first-class option
+(`--layouts random|edge|centre|adversarial|mixed`, default `mixed`). Over 200
+layouts per family, the code baselines invert:
+
+| layout family | density | huntTarget |
+| --- | --- | --- |
+| random | 43.4 | 51.8 |
+| edge | 52.3 | 50.1 |
+| adversarial | 53.0 | 49.8 |
+| mixed | 48.6 | 48.7 |
+
+`density` assumes a uniform placement prior, so uniform-random layouts are the
+one case it is built for. Benchmarking only on those flatters the very baseline
+the model is measured against. Every result records its layout family; results
+from different families are not comparable.
+
 All strategies face identical layouts, so the comparison is paired. If a strategy
 loses games to errors the report says so explicitly and the table is flagged as not
 paired, rather than quietly comparing means over different layout sets. Results are

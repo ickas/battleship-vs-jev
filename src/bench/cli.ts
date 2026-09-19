@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { makeConfig } from '../engine/config.js';
+import { LAYOUT_DESCRIPTIONS, LAYOUT_FAMILIES, type LayoutFamily } from '../engine/layouts.js';
 import { formatComparisonTable, resultsToCsv } from '../metrics/summary.js';
 import { runBench } from './runner.js';
 import {
@@ -31,6 +32,7 @@ interface Args {
   transport: Transport;
   out: string;
   allowTouching: boolean;
+  layoutFamily: LayoutFamily;
   minIntervalMs: number;
 }
 
@@ -73,6 +75,7 @@ function parseArgs(argv: string[]): Args {
     minIntervalMs: Number(flags.get('minIntervalMs') ?? 1500),
     ...(flags.get('model') ? { model: flags.get('model')! } : {}),
     allowTouching: flags.get('allowTouching') !== 'false',
+    layoutFamily: parseLayoutFamily(flags),
   };
 }
 
@@ -96,6 +99,14 @@ function parseTransport(flags: Map<string, string>): Transport {
   const value = flags.get('transport') ?? 'gateway';
   if (value !== 'gateway' && value !== 'direct' && value !== 'mock') {
     throw new Error(`--transport must be gateway, direct or mock, got "${value}"`);
+  }
+  return value;
+}
+
+function parseLayoutFamily(flags: Map<string, string>): LayoutFamily {
+  const value = (flags.get('layouts') ?? 'mixed') as LayoutFamily;
+  if (!LAYOUT_FAMILIES.includes(value)) {
+    throw new Error(`--layouts must be one of ${LAYOUT_FAMILIES.join(', ')}, got "${value}"`);
   }
   return value;
 }
@@ -128,8 +139,9 @@ async function main(): Promise<void> {
   );
 
   console.log(
-    `Running ${args.games} games per strategy (${strategies.length} strategies, seed ${args.seed})\n`,
+    `Running ${args.games} games per strategy (${strategies.length} strategies, seed ${args.seed})`,
   );
+  console.log(`Layouts: ${args.layoutFamily} - ${LAYOUT_DESCRIPTIONS[args.layoutFamily]}\n`);
 
   let lastStrategy = '';
   const report = await runBench({
@@ -137,6 +149,7 @@ async function main(): Promise<void> {
     strategies,
     games: args.games,
     seed: args.seed,
+    layoutFamily: args.layoutFamily,
     onProgress: (event) => {
       if (event.strategyId !== lastStrategy) {
         lastStrategy = event.strategyId;
@@ -148,6 +161,8 @@ async function main(): Promise<void> {
 
   console.log('\n');
   console.log(formatComparisonTable(report.summaries));
+
+  console.log(`\nLayout family: ${report.layoutFamily}. Results are not comparable across families.`);
 
   if (!report.paired) {
     console.log(`\nWARNING: ${report.pairingNote}`);

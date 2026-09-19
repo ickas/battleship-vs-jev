@@ -196,6 +196,32 @@ reports the model that actually answered — so a re-run at that scale would als
 close the version-recording gap described in the README. Until then the representation question is open,
 and the code says so rather than implying it was answered.
 
+## The fleet layout decides the answer
+
+Measured over 200 layouts per family with the two code baselines, the ranking
+between them **inverts** depending on how the defending fleet was placed:
+
+| layout family | density | huntTarget | gap |
+| --- | --- | --- | --- |
+| random | 43.4 shots | 51.8 shots | density wins by 8.3 |
+| edge | 52.3 shots | 50.1 shots | density **loses** by 2.2 |
+| adversarial | 53.0 shots | 49.8 shots | density **loses** by 3.1 |
+| mixed | 48.6 shots | 48.7 shots | level |
+
+The mechanism is not subtle. `density` counts valid ship placements under a
+**uniform** prior, so on an empty board it rates the middle at 28.5 and the edge
+at 18.2 and searches the middle first. An edge layout puts all 17 ship cells
+exactly where it looks last.
+
+This is a measurement bias, not a bug: benchmarking only on uniform-random
+layouts is benchmarking `density` on precisely the distribution it assumes, and
+`density` is the baseline the model is being judged against. A model strategy
+that looked mediocre against a 43.4-shot density baseline is being held to a
+standard that only exists on one layout family.
+
+**`mixed` is therefore the default**, and every result records the family it
+used. Results from different families are not comparable.
+
 ## The free tier will not sustain this benchmark
 
 The first live run of this harness lost 21 of 24 positions to

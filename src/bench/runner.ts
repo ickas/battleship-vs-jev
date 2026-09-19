@@ -1,5 +1,5 @@
 import { playGame, type GameResult } from '../engine/game.js';
-import { randomFleet } from '../engine/placement.js';
+import { makeLayoutSet, type LayoutFamily } from '../engine/layouts.js';
 import { makeRng } from '../engine/rng.js';
 import type { GameConfig, PlacedShip } from '../engine/types.js';
 import { summarize, type StrategySummary } from '../metrics/summary.js';
@@ -14,6 +14,12 @@ export interface BenchOptions {
   seed?: number;
   /** Pre-built layouts. Overrides seeded generation when supplied. */
   layouts?: PlacedShip[][];
+  /**
+   * Which family of fleet layout to benchmark against. Defaults to 'mixed':
+   * uniform-random layouts are exactly what the density baseline assumes, so
+   * benchmarking only on those flatters it. See src/engine/layouts.ts.
+   */
+  layoutFamily?: LayoutFamily;
   onProgress?: (event: ProgressEvent) => void;
   abortSignal?: AbortSignal;
   /** Stops a strategy after this many consecutive failures. Defaults to 3. */
@@ -34,6 +40,8 @@ export interface BenchReport {
   config: GameConfig;
   games: number;
   seed: number;
+  /** Which layout family the run used. Results are not comparable across families. */
+  layoutFamily: LayoutFamily;
   summaries: StrategySummary[];
   results: GameResult[];
   errors: Array<{ strategyId: string; gameIndex: number; error: string }>;
@@ -60,9 +68,8 @@ export async function runBench(options: BenchOptions): Promise<BenchReport> {
   const seed = options.seed ?? 1;
   const failureLimit = options.failureLimit ?? 3;
 
-  const layouts =
-    options.layouts ??
-    Array.from({ length: games }, (_, i) => randomFleet(config, makeRng(seed + i)));
+  const layoutFamily = options.layoutFamily ?? 'mixed';
+  const layouts = options.layouts ?? makeLayoutSet(layoutFamily, games, config, seed);
 
   if (layouts.length < games) {
     throw new Error(`Need ${games} layouts, got ${layouts.length}`);
@@ -132,6 +139,7 @@ export async function runBench(options: BenchOptions): Promise<BenchReport> {
     config,
     games,
     seed,
+    layoutFamily,
     summaries,
     results,
     errors,
