@@ -25,7 +25,12 @@ interface Args {
   games: number;
   strategies: string[];
   seed: number;
-  representation: string;
+  /**
+   * Only set when passed explicitly. Left undefined, each strategy uses its own
+   * default - cellList for jevPure, so its score measures the model rather than
+   * the code's analysis, and semantic for jevHybrid, whose design needs it.
+   */
+  representation?: string;
   topK: number;
   temperature: number;
   model?: string;
@@ -67,7 +72,7 @@ function parseArgs(argv: string[]): Args {
     games,
     strategies,
     seed: Number(flags.get('seed') ?? 1),
-    representation: flags.get('representation') ?? 'semantic',
+    ...(flags.get('representation') ? { representation: flags.get('representation')! } : {}),
     topK: Number(flags.get('topK') ?? 16),
     temperature: Number(flags.get('temperature') ?? 0),
     transport: parseTransport(flags),
@@ -132,7 +137,7 @@ async function main(): Promise<void> {
   const strategies = args.strategies.map((id) =>
     buildStrategy(id, {
       client,
-      representation: args.representation,
+      ...(args.representation ? { representation: args.representation } : {}),
       topK: args.topK,
       temperature: args.temperature,
     }),
@@ -141,7 +146,13 @@ async function main(): Promise<void> {
   console.log(
     `Running ${args.games} games per strategy (${strategies.length} strategies, seed ${args.seed})`,
   );
-  console.log(`Layouts: ${args.layoutFamily} - ${LAYOUT_DESCRIPTIONS[args.layoutFamily]}\n`);
+  console.log(`Layouts: ${args.layoutFamily} - ${LAYOUT_DESCRIPTIONS[args.layoutFamily]}`);
+  console.log(
+    args.representation
+      ? `Representation: ${args.representation} (forced for every model strategy)`
+      : 'Representation: each strategy uses its own default (jevPure cellList, jevHybrid semantic)',
+  );
+  console.log();
 
   let lastStrategy = '';
   const report = await runBench({

@@ -201,3 +201,22 @@ describe('buildStrategy', () => {
     expect(() => buildStrategy('nope', { client: new MockJevClient() })).toThrow(/Unknown strategy/);
   });
 });
+
+describe('representation defaults', () => {
+  /**
+   * jevPure's score is only a measure of the model if code contributes nothing
+   * but the rules, which means cellList. A runner that forced semantic on it
+   * would silently be measuring the code's analysis instead.
+   */
+  it('leaves each strategy on its own representation when none is given', () => {
+    const client = new MockJevClient();
+    expect(buildStrategy('jevPure', { client }).id).toBe('jevPure:cellList');
+  });
+
+  it('honours an explicit representation', () => {
+    const client = new MockJevClient();
+    expect(buildStrategy('jevPure', { client, representation: 'semantic' }).id).toBe(
+      'jevPure:semantic',
+    );
+  });
+});
