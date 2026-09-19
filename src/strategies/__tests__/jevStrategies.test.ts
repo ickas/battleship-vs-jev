@@ -6,6 +6,7 @@ import { randomFleet } from '../../engine/placement.js';
 import { makeRng } from '../../engine/rng.js';
 import { MockJevClient } from '../../jev/mock.js';
 import type { JevClient, JevRequest, JevResponse, JevCallLog } from '../../jev/types.js';
+import { resultsToCsv } from '../../metrics/summary.js';
 import { JevHybridStrategy } from '../jevHybrid.js';
 import { JevPureStrategy } from '../jevPure.js';
 
@@ -221,4 +222,75 @@ describe('full games with the mock client', () => {
       expect(result.shots.every((s) => s.modelId !== undefined || s.notes?.includes('no model call'))).toBe(true);
     }
   }, 30_000);
+});
+
+describe('Gateway bookkeeping reaches the result', () => {
+  /**
+   * The CLIs and the README promise that every result carries the Gateway
+   * generationId, which is the only reliable way to match a benchmark row to a
+   * call in the Gateway request logs. That promise previously did not hold:
+   * the field existed on the response but was dropped before the result file.
+   */
+  function replyWithMetadata(): JevResponse {
+    return {
+      answers: { target: { type: 'choice', choice: 'A1', probabilities: { A1: 1 } } },
+      confidence: { target: 0.9 },
+      usage: { inputTokens: 200, outputTokens: 10 },
+      modelId: 'typesafe-ai/jev',
+      generationId: 'gen_ABC123',
+      marketCostUsd: 0.0000114,
+      attempts: 2,
+      retryWaitMs: 4000,
+      latencyMs: 1,
+    };
+  }
+
+  it('carries generationId and cost from the response to the decision', async () => {
+    for (const build of [
+      (client: JevClient) => new JevPureStrategy({ client }),
+      (client: JevClient) => new JevHybridStrategy({ client, topK: 5 }),
+    ]) {
+      const strategy = build(new ScriptedClient(replyWithMetadata));
+      const view = new Board(config, randomFleet(config, makeRng(1))).view();
+      const decision = await strategy.nextShot(view, makeRng(1));
+
+      expect(decision.generationId).toBe('gen_ABC123');
+      expect(decision.marketCostUsd).toBeCloseTo(0.0000114, 10);
+      expect(decision.attempts).toBe(2);
+      expect(decision.retryWaitMs).toBe(4000);
+    }
+  });
+
+  it('carries them all the way into the game result', async () => {
+    const strategy = new JevPureStrategy({ client: new ScriptedClient(replyWithMetadata) });
+    const fleet = randomFleet(config, makeRng(1));
+    const result = await playGame({
+      config,
+      fleet,
+      strategy,
+      rng: makeRng(1),
+      seed: 1,
+      maxShots: 3,
+    });
+
+    expect(result.generationIds).toEqual(['gen_ABC123', 'gen_ABC123', 'gen_ABC123']);
+    expect(result.totalCostUsd).toBeCloseTo(0.0000114 * 3, 10);
+    expect(result.shots[0]!.generationId).toBe('gen_ABC123');
+  });
+
+  it('includes generation ids and cost in the CSV', async () => {
+    const strategy = new JevPureStrategy({ client: new ScriptedClient(replyWithMetadata) });
+    const result = await playGame({
+      config,
+      fleet: randomFleet(config, makeRng(1)),
+      strategy,
+      rng: makeRng(1),
+      seed: 1,
+      maxShots: 2,
+    });
+
+    const csv = resultsToCsv([result]);
+    expect(csv.split('\n')[0]).toContain('costUsd,modelIds,generationIds');
+    expect(csv).toContain('gen_ABC123 gen_ABC123');
+  });
 });

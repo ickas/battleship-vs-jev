@@ -117,9 +117,14 @@ export interface RepresentationScore {
   meanRank: number;
   meanConfidence?: number;
   meanInputTokens: number;
+  /** Gateway round-trip time only, excluding client-side rate-limit backoff. */
   meanLatencyMs: number;
   p95LatencyMs: number;
   modelIds: string[];
+  /** Gateway generation ids for every call, for cross-checking the Gateway logs. */
+  generationIds: string[];
+  /** List-price cost of scoring this representation, in USD. */
+  totalCostUsd: number;
 }
 
 export async function scoreRepresentation(
@@ -134,6 +139,8 @@ export async function scoreRepresentation(
   const inputTokens: number[] = [];
   const latencies: number[] = [];
   const modelIds = new Set<string>();
+  const generationIds: string[] = [];
+  let totalCostUsd = 0;
   let failures = 0;
 
   for (const position of positions) {
@@ -177,6 +184,8 @@ export async function scoreRepresentation(
       }
       latencies.push(response.latencyMs);
       modelIds.add(response.modelId);
+      if (response.generationId) generationIds.push(response.generationId);
+      totalCostUsd += response.marketCostUsd ?? 0;
     } catch (error) {
       failures++;
       console.warn(
@@ -206,6 +215,8 @@ export async function scoreRepresentation(
     meanLatencyMs: mean(latencies),
     p95LatencyMs: percentile(latencies, 0.95),
     modelIds: [...modelIds],
+    generationIds,
+    totalCostUsd,
   };
 }
 

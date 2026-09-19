@@ -26,9 +26,14 @@ export interface GameRecord {
  */
 const BASELINE = {
   /** Mean share of a fleet with at least one cell on the board edge. */
-  edgeFraction: 0.438,
-  /** Share of games where more than half the ships are horizontal. */
-  horizontalMajority: 0.527,
+  edgeFraction: 0.435,
+  /**
+   * Share of games where more than half the ships are horizontal. This is 0.5
+   * by the board's own symmetry - a square board has no orientation preference
+   * - so the exact value is used rather than a sampled estimate. A 3,000-sample
+   * run gave 0.527, which is a ~3 sigma draw; 30,000 samples give 0.497.
+   */
+  horizontalMajority: 0.5,
 } as const;
 
 /** How far from the baseline a tendency must sit before it is reported. */

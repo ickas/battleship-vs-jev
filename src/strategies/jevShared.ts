@@ -95,11 +95,20 @@ export function densityFallbackHeatmap(view: BoardView): Heatmap {
   return normalizeHeatmap(computeDensity(view).weights);
 }
 
-/** Pulls the usage/confidence/model fields a ShotDecision records. */
+/**
+ * Pulls everything a ShotDecision records about the call: usage, confidence,
+ * the model id, and the Gateway's own bookkeeping. `generationId` is the only
+ * reliable way to tie a benchmark row back to a call in the Gateway logs, so it
+ * has to survive all the way into the result files.
+ */
 export function decisionMetadata(response: JevResponse, questionId: string) {
   return {
     usage: { inputTokens: response.usage.inputTokens, outputTokens: response.usage.outputTokens },
     confidence: response.confidence[questionId],
     modelId: response.modelId,
+    generationId: response.generationId,
+    marketCostUsd: response.marketCostUsd,
+    attempts: response.attempts,
+    retryWaitMs: response.retryWaitMs,
   };
 }

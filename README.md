@@ -122,8 +122,10 @@ count and every probability calculation. Jev is only ever asked to judge between
 options that code has already established are legal.
 
 **Every Jev call goes through `JevClient`,** which logs the state, the questions, the
-response, latency, tokens, confidence and the resolved model version. Nothing else in
-the codebase imports the AI SDK.
+response, latency, tokens, confidence, the model id the Gateway reported and the
+Gateway's own generation id and cost. Nothing on the benchmark path imports the AI SDK
+except `src/jev/gateway.ts`; the one exception is `scripts/probe-model-version.mts`, a
+diagnostic that inspects raw response headers the client deliberately does not expose.
 
 ## Verified API facts
 
@@ -169,8 +171,9 @@ Probed on 2026-09-19 with `npx tsx scripts/probe-model-version.mts`:
 TypeSafe's own docs say the alias points at `jev-1.13.0`, but nothing in the Gateway
 response confirms which build answered a given call. So results here record the alias
 and the date, and **a silent model update would be invisible**. Every result file also
-stores the Gateway `generationId`, which is the only reliable way to tie a benchmark
-row back to a specific call in the Gateway logs.
+stores the Gateway `generationId` for each call — in the JSON, and in the CSV's
+`generationIds` column — which is the only reliable way to tie a benchmark row back to
+a specific call in the Gateway logs.
 
 Confidence is reported for `choice` and `score` only. A boolean-only request returns
 `confidence: {}`.
@@ -195,7 +198,11 @@ Jev's own probabilities.
 ## Honesty notes
 
 - Latency reported everywhere is **end to end through the Gateway**, measured by the
-  client. It includes Gateway overhead and is not a measure of Jev alone.
+  client. It includes Gateway overhead and is not a measure of Jev alone. It covers the
+  successful attempt only: time spent sleeping between rate-limit retries is reported
+  separately as `retryWaitMs`, so backoff never inflates a benchmark figure.
+- Costs shown are the Gateway's own `marketCost` for each call, read from the response.
+  No price is hardcoded anywhere.
 - Results are only comparable within a single model version. Every result file records
   the version that answered.
 - The self-play history test refuses to claim an effect below 10 decided games, or

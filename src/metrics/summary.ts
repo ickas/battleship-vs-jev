@@ -23,6 +23,8 @@ export interface StrategySummary {
   totalInputTokens: number;
   totalOutputTokens: number;
   meanTokensPerGame: number;
+  /** List-price cost across every game, in USD, from the Gateway's own figures. */
+  totalCostUsd: number;
   /** Mean of the model's reported confidence, over shots that carried one. */
   meanConfidence?: number;
   /** Distinct model versions seen. Results are comparable only within one. */
@@ -75,6 +77,7 @@ export function summarize(results: GameResult[]): StrategySummary {
   const totalHits = results.reduce((sum, r) => sum + r.hits, 0);
   const totalInputTokens = results.reduce((sum, r) => sum + r.totalInputTokens, 0);
   const totalOutputTokens = results.reduce((sum, r) => sum + r.totalOutputTokens, 0);
+  const totalCostUsd = results.reduce((sum, r) => sum + (r.totalCostUsd ?? 0), 0);
 
   return {
     strategyId: first.strategyId,
@@ -93,6 +96,7 @@ export function summarize(results: GameResult[]): StrategySummary {
     totalInputTokens,
     totalOutputTokens,
     meanTokensPerGame: (totalInputTokens + totalOutputTokens) / results.length,
+    totalCostUsd,
     meanConfidence: confidences.length > 0 ? mean(confidences) : undefined,
     modelIds,
   };
@@ -142,7 +146,9 @@ export function resultsToCsv(results: GameResult[]): string {
     'totalLatencyMs',
     'inputTokens',
     'outputTokens',
+    'costUsd',
     'modelIds',
+    'generationIds',
   ].join(',');
 
   const rows = results.map((r) =>
@@ -157,7 +163,10 @@ export function resultsToCsv(results: GameResult[]): string {
       r.totalLatencyMs.toFixed(1),
       r.totalInputTokens,
       r.totalOutputTokens,
+      (r.totalCostUsd ?? 0).toFixed(8),
       quote([...new Set(r.shots.map((s) => s.modelId).filter(Boolean))].join(' ')),
+      // Every generation id, so any row can be found in the Gateway request logs.
+      quote((r.generationIds ?? []).join(' ')),
     ].join(','),
   );
 

@@ -103,6 +103,10 @@ export class GameSession {
       notes: decision.notes,
       usage: decision.usage,
       modelId: decision.modelId,
+      generationId: decision.generationId,
+      marketCostUsd: decision.marketCostUsd,
+      attempts: decision.attempts,
+      retryWaitMs: decision.retryWaitMs,
     };
     this.records.push(record);
     return record;
@@ -131,6 +135,8 @@ export class GameSession {
       totalInputTokens: this.records.reduce((sum, r) => sum + (r.usage?.inputTokens ?? 0), 0),
       totalOutputTokens: this.records.reduce((sum, r) => sum + (r.usage?.outputTokens ?? 0), 0),
       modelIds: [...new Set(this.records.map((r) => r.modelId).filter(Boolean))],
+      generationIds: this.records.map((r) => r.generationId).filter(Boolean),
+      totalCostUsd: this.records.reduce((sum, r) => sum + (r.marketCostUsd ?? 0), 0),
       history: this.records.map((r) => ({
         index: r.index,
         label: r.label,

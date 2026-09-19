@@ -137,6 +137,8 @@ describe('formatScoreTable', () => {
         meanLatencyMs: 50,
         p95LatencyMs: 60,
         modelIds: [],
+        generationIds: [],
+        totalCostUsd: 0,
       },
       {
         representationId: 'b',
@@ -152,6 +154,8 @@ describe('formatScoreTable', () => {
         meanLatencyMs: 50,
         p95LatencyMs: 60,
         modelIds: [],
+        generationIds: [],
+        totalCostUsd: 0,
       },
     ]);
     const lines = table.split('\n');

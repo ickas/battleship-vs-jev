@@ -1,6 +1,11 @@
 /**
  * Phase 0 open point: which Jev version does `typesafe-ai/jev` resolve to, and
  * can a version be pinned? Run with `npx tsx scripts/probe-model-version.mts`.
+ *
+ * This is the one deliberate exception to the rule that only `src/jev/gateway.ts`
+ * imports the AI SDK. It exists to inspect the raw response - headers, body and
+ * the full providerMetadata - which JevClient intentionally does not surface,
+ * and it is a diagnostic, not part of the benchmark path.
  */
 import { loadEnv } from '../src/env.js';
 loadEnv();

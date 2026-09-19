@@ -87,7 +87,10 @@ export class GatewayJevClient implements JevClient {
     failures: 0,
     inputTokens: 0,
     outputTokens: 0,
+    /** Gateway round-trip time only, excluding client-side backoff waiting. */
     totalLatencyMs: 0,
+    /** Time spent sleeping between rate-limit retries. Never part of latency. */
+    retryWaitMs: 0,
   };
 
   constructor(options: GatewayJevClientOptions = {}) {
@@ -121,20 +124,20 @@ export class GatewayJevClient implements JevClient {
     const start = performance.now();
 
     try {
-      const result = await this.withRateLimitRetry(request.abortSignal, () =>
-        this.evaluateFn({
-        model: this.evaluationModel as never,
-        state: request.state as never,
-        questions: request.questions as never,
-        maxRetries: this.maxRetries,
-        ...(request.abortSignal ? { abortSignal: request.abortSignal } : {}),
-        ...(this.gatewayOptions
-          ? { providerOptions: { gateway: this.gatewayOptions as never } }
-          : {}),
-        }),
+      const { result, latencyMs, attempts, retryWaitMs } = await this.withRateLimitRetry(
+        request.abortSignal,
+        () =>
+          this.evaluateFn({
+            model: this.evaluationModel as never,
+            state: request.state as never,
+            questions: request.questions as never,
+            maxRetries: this.maxRetries,
+            ...(request.abortSignal ? { abortSignal: request.abortSignal } : {}),
+            ...(this.gatewayOptions
+              ? { providerOptions: { gateway: this.gatewayOptions as never } }
+              : {}),
+          }),
       );
-
-      const latencyMs = performance.now() - start;
       const response: JevResponse = {
         answers: result.answers as Record<string, JevAnswer>,
         confidence: extractConfidence(result.providerMetadata, Object.keys(request.questions)),
@@ -146,6 +149,8 @@ export class GatewayJevClient implements JevClient {
         modelId: result.response?.modelId ?? this.model,
         ...extractGatewayMetadata(result.providerMetadata),
         latencyMs,
+        attempts,
+        retryWaitMs,
         warnings: normalizeWarnings(result.warnings),
         rounding: result.rounding,
       };
@@ -163,6 +168,7 @@ export class GatewayJevClient implements JevClient {
       this.stats.inputTokens += response.usage.inputTokens ?? 0;
       this.stats.outputTokens += response.usage.outputTokens ?? 0;
       this.stats.totalLatencyMs += latencyMs;
+      this.stats.retryWaitMs += retryWaitMs;
 
       return response;
     } catch (error) {
@@ -208,19 +214,36 @@ export class GatewayJevClient implements JevClient {
    * Retries a rate-limited call beyond the AI SDK's own attempts, backing off
    * further each time. Any other failure is rethrown immediately - only rate
    * limits are worth waiting out.
+   *
+   * Each attempt is timed on its own and only the successful attempt's duration
+   * is reported as latency. Backoff is client-side waiting, not Gateway
+   * round-trip time, so folding it into `latencyMs` would inflate every
+   * benchmark figure that is labelled end-to-end through the Gateway. It is
+   * returned separately instead.
    */
   private async withRateLimitRetry<T>(
     abortSignal: AbortSignal | undefined,
     call: () => Promise<T>,
-  ): Promise<T> {
+  ): Promise<{ result: T; latencyMs: number; attempts: number; retryWaitMs: number }> {
     let lastError: unknown;
+    let retryWaitMs = 0;
+
     for (let attempt = 0; attempt <= this.rateLimitRetries; attempt++) {
+      const attemptStart = performance.now();
       try {
-        return await call();
+        const result = await call();
+        return {
+          result,
+          latencyMs: performance.now() - attemptStart,
+          attempts: attempt + 1,
+          retryWaitMs,
+        };
       } catch (error) {
         lastError = error;
         if (!isRateLimitError(error) || attempt === this.rateLimitRetries) throw error;
-        await sleep(this.rateLimitBackoffMs * 2 ** attempt, abortSignal);
+        const wait = this.rateLimitBackoffMs * 2 ** attempt;
+        retryWaitMs += wait;
+        await sleep(wait, abortSignal);
       }
     }
     throw lastError;

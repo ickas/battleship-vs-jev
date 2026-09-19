@@ -19,6 +19,11 @@ export interface ShotRecord {
   /** Token usage for this shot, when the decision came from a model. */
   usage?: { inputTokens?: number; outputTokens?: number };
   modelId?: string;
+  /** Gateway generation id, so a row can be found in the Gateway request logs. */
+  generationId?: string;
+  marketCostUsd?: number;
+  attempts?: number;
+  retryWaitMs?: number;
 }
 
 export interface GameResult {
@@ -37,6 +42,10 @@ export interface GameResult {
   totalLatencyMs: number;
   totalInputTokens: number;
   totalOutputTokens: number;
+  /** List-price cost of this game in USD, summed from the Gateway's own figures. */
+  totalCostUsd: number;
+  /** Gateway generation ids for every model call in this game. */
+  generationIds: string[];
   /** The minimum possible score: every shot a hit. */
   perfectScore: number;
 }
@@ -87,6 +96,10 @@ export async function playGame(options: PlayOptions): Promise<GameResult> {
       notes: decision.notes,
       usage: decision.usage,
       modelId: decision.modelId,
+      generationId: decision.generationId,
+      marketCostUsd: decision.marketCostUsd,
+      attempts: decision.attempts,
+      retryWaitMs: decision.retryWaitMs,
     };
     shots.push(record);
     onShot?.(record, board);
@@ -107,6 +120,8 @@ export async function playGame(options: PlayOptions): Promise<GameResult> {
     totalLatencyMs: shots.reduce((sum, s) => sum + s.latencyMs, 0),
     totalInputTokens: shots.reduce((sum, s) => sum + (s.usage?.inputTokens ?? 0), 0),
     totalOutputTokens: shots.reduce((sum, s) => sum + (s.usage?.outputTokens ?? 0), 0),
+    totalCostUsd: shots.reduce((sum, s) => sum + (s.marketCostUsd ?? 0), 0),
+    generationIds: shots.map((s) => s.generationId).filter((id): id is string => !!id),
     perfectScore: totalShipCells(config),
   };
 }

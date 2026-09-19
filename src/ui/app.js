@@ -173,6 +173,7 @@ function handlePlacementClick(row, col) {
 function setLayoutMode(mode) {
   const manual = mode === 'manual';
   state.placing.active = manual;
+  state.game = null;
   el('seed-field').hidden = manual;
   el('placement-field').hidden = !manual;
 
@@ -231,11 +232,14 @@ function buildBoard(rows, cols) {
       cell.id = `cell-${row}-${col}`;
       cell.setAttribute('role', 'gridcell');
       cell.setAttribute('aria-label', `${LETTERS[col]}${row + 1}`);
+      // Placement only applies before a game starts, or once one has finished.
+      const placementEditable = () =>
+        state.placing.active && (!state.game || state.game.isOver);
       cell.addEventListener('click', () => {
-        if (state.placing.active) handlePlacementClick(row, col);
+        if (placementEditable()) handlePlacementClick(row, col);
       });
       cell.addEventListener('mouseenter', () => {
-        if (state.placing.active) handlePlacementHover(row, col);
+        if (placementEditable()) handlePlacementHover(row, col);
       });
       board.appendChild(cell);
     }
@@ -409,7 +413,9 @@ async function newGame() {
 
   try {
     const game = await api('/api/games', { method: 'POST', body: JSON.stringify(body) });
-    state.placing.active = false;
+    // `placing.active` stays tied to the select, so a second "New game" in
+    // manual mode still sends the fleet instead of silently going random.
+    // Board clicks are gated on there being no game in progress.
     buildBoard(game.config.rows, game.config.cols);
     render(game);
   } catch (error) {

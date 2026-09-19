@@ -147,15 +147,20 @@ export async function playMatch(options: MatchOptions): Promise<MatchResult> {
     }
   }
 
-  // Record what each player learned about the other.
-  for (const [index, player] of players.entries()) {
-    const opponent = players[1 - index]!;
-    histories[player.id]?.record({
-      opponentFleet: fleets[opponent.id]!,
-      opponentShots: shotsFired[opponent.id]!,
-      won: winnerId === player.id,
-      shotsTaken: shotsFired[player.id]!.length,
-    });
+  // Record what each player learned about the other. A contaminated game is
+  // skipped: its shots include random substitutes made after a failed call, so
+  // learning from them would teach a habit the opponent never had.
+  const gameIsClean = !contaminated && !contaminatedPlacement;
+  if (gameIsClean) {
+    for (const [index, player] of players.entries()) {
+      const opponent = players[1 - index]!;
+      histories[player.id]?.record({
+        opponentFleet: fleets[opponent.id]!,
+        opponentShots: shotsFired[opponent.id]!,
+        won: winnerId === player.id,
+        shotsTaken: shotsFired[player.id]!.length,
+      });
+    }
   }
 
   return {

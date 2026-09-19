@@ -44,11 +44,14 @@ export class HistoryAwareStrategy implements Strategy {
   private readonly historyWeight: number;
 
   /**
-   * Whether the most recent shot had any history signal to work with. Firing
-   * and placement can differ: placement may have summaries while firing does
-   * not, so the two are reported separately.
+   * What the most recent shot actually drew on. These are different channels
+   * and are worth distinguishing: the code prior applies as soon as there are
+   * three games, whereas summaries are only produced when a habit departs from
+   * random play - which for many opponents is never. Reporting only the first
+   * would make the semantic channel look used when no sentence was sent.
    */
-  lastShotUsedHistory = false;
+  lastShotUsedPrior = false;
+  lastShotUsedSummaries = false;
 
   constructor(options: HistoryAwareOptions) {
     this.client = options.client;
@@ -98,8 +101,8 @@ export class HistoryAwareStrategy implements Strategy {
     }
 
     const summaries = this.useHistory ? this.history.summarize() : [];
-    this.lastShotUsedHistory =
-      summaries.length > 0 || (this.useHistory && this.history.gameCount >= 3);
+    this.lastShotUsedPrior = this.useHistory && this.history.gameCount >= 3;
+    this.lastShotUsedSummaries = summaries.length > 0;
     const response = await this.client.ask({
       label: this.useHistory ? 'selfplay.shot.withHistory' : 'selfplay.shot.noHistory',
       state: {

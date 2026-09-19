@@ -36,6 +36,7 @@ export interface SelfPlayProgress {
 
 export interface SelfPlayReport {
   games: number;
+  /** Games that ran to a conclusion, including contaminated ones. */
   completed: number;
   /** Wins for the player using history. */
   winsWithHistory: number;
@@ -50,8 +51,14 @@ export interface SelfPlayReport {
   historyWinRateSecondHalf: number;
   /** Games where the history player had signals available when placing its fleet. */
   gamesWithPlacementSignal: number;
-  /** Games where the history player had signals available when choosing shots. */
-  gamesWithFiringSignal: number;
+  /** Games where the code-side historical prior was applied when choosing shots. */
+  gamesWithFiringPrior: number;
+  /**
+   * Games where Jev was actually sent a sentence about the opponent. Far rarer
+   * than the prior, since a habit is only described when it departs from random
+   * play, and this is the number that says the semantic channel was exercised.
+   */
+  gamesWithFiringSummaries: number;
   /**
    * Games excluded from the verdict because a Jev call failed and a random shot
    * was substituted. A rate-limited call must not be scored as a strategy loss.
@@ -59,11 +66,16 @@ export interface SelfPlayReport {
   contaminatedGames: number;
   errors: string[];
   modelIds: string[];
+  /** Gateway generation ids seen across the batch, for the Gateway request logs. */
+  generationIds: string[];
+  /** List-price cost of the batch, in USD, from the Gateway's own figures. */
+  totalCostUsd: number;
   perGame: Array<{
     index: number;
     winner: string | undefined;
     shotsWithHistory: number;
     shotsWithoutHistory: number;
+    contaminated: boolean;
   }>;
 }
 
@@ -110,10 +122,13 @@ export async function runSelfPlay(options: SelfPlayOptions): Promise<SelfPlayRep
     historyWinRateFirstHalf: 0,
     historyWinRateSecondHalf: 0,
     gamesWithPlacementSignal: 0,
-    gamesWithFiringSignal: 0,
+    gamesWithFiringPrior: 0,
+    gamesWithFiringSummaries: 0,
     contaminatedGames: 0,
     errors: [],
     modelIds: [],
+    generationIds: [],
+    totalCostUsd: 0,
     perGame: [],
   };
 
@@ -135,11 +150,20 @@ export async function runSelfPlay(options: SelfPlayOptions): Promise<SelfPlayRep
       report.completed++;
       report.errors.push(...result.errors);
       if (result.usedHistory[HISTORY_PLAYER]) report.gamesWithPlacementSignal++;
-      if (historyStrategy.lastShotUsedHistory) report.gamesWithFiringSignal++;
+      if (historyStrategy.lastShotUsedPrior) report.gamesWithFiringPrior++;
+      if (historyStrategy.lastShotUsedSummaries) report.gamesWithFiringSummaries++;
 
       if (result.contaminated) {
-        // Counted, reported, but kept out of every figure the verdict uses.
+        // Recorded so the run is auditable, but kept out of every figure the
+        // verdict uses.
         report.contaminatedGames++;
+        report.perGame.push({
+          index: i,
+          winner: result.winnerId,
+          shotsWithHistory: result.shotsByPlayer[HISTORY_PLAYER] ?? 0,
+          shotsWithoutHistory: result.shotsByPlayer[CONTROL_PLAYER] ?? 0,
+          contaminated: true,
+        });
         continue;
       }
 
@@ -156,6 +180,7 @@ export async function runSelfPlay(options: SelfPlayOptions): Promise<SelfPlayRep
         winner: result.winnerId,
         shotsWithHistory: result.shotsByPlayer[HISTORY_PLAYER] ?? 0,
         shotsWithoutHistory: result.shotsByPlayer[CONTROL_PLAYER] ?? 0,
+        contaminated: false,
       });
 
       onGame?.(i, result, {
@@ -185,6 +210,15 @@ export async function runSelfPlay(options: SelfPlayOptions): Promise<SelfPlayRep
   report.modelIds = [
     ...new Set(client.log.map((entry) => entry.response?.modelId).filter((m): m is string => !!m)),
   ];
+  // The client log is capped, so these cover the most recent calls rather than
+  // the whole batch; enough to locate the run in the Gateway logs.
+  report.generationIds = client.log
+    .map((entry) => entry.response?.generationId)
+    .filter((id): id is string => !!id);
+  report.totalCostUsd = client.log.reduce(
+    (sum, entry) => sum + (entry.response?.marketCostUsd ?? 0),
+    0,
+  );
 
   return report;
 }

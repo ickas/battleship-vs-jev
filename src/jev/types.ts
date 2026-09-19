@@ -87,8 +87,16 @@ export interface JevResponse {
   marketCostUsd?: number;
   /** What the call was actually billed, in USD (`cost`). */
   billedCostUsd?: number;
-  /** End-to-end latency measured by the client, including Gateway overhead. */
+  /**
+   * End-to-end latency of the successful attempt, measured by the client and
+   * including Gateway overhead. Excludes any client-side backoff waiting,
+   * which is reported separately as `retryWaitMs`.
+   */
   latencyMs: number;
+  /** How many attempts this call took. 1 means it succeeded first time. */
+  attempts?: number;
+  /** Time spent sleeping between rate-limit retries, in milliseconds. */
+  retryWaitMs?: number;
   warnings?: string[];
   /** Decimal precision the provider rounded to, when reported. */
   rounding?: { probabilityDecimals?: number; scoreDecimals?: number };
@@ -115,6 +123,9 @@ export interface JevClient {
     failures: number;
     inputTokens: number;
     outputTokens: number;
+    /** Gateway round-trip time only, excluding client-side backoff. */
     totalLatencyMs: number;
+    /** Time spent sleeping between rate-limit retries. */
+    retryWaitMs?: number;
   };
 }

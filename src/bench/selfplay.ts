@@ -66,8 +66,9 @@ async function main(): Promise<void> {
       `second half ${(report.historyWinRateSecondHalf * 100).toFixed(1)}%`,
   );
   console.log(
-    `History signal available: placement in ${report.gamesWithPlacementSignal} games, ` +
-      `firing in ${report.gamesWithFiringSignal}`,
+    `History used: placement in ${report.gamesWithPlacementSignal} games; ` +
+      `firing prior in ${report.gamesWithFiringPrior}; ` +
+      `a sentence about the opponent sent to Jev in ${report.gamesWithFiringSummaries}`,
   );
   if (report.contaminatedGames > 0) {
     console.log(

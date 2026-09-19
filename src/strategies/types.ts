@@ -24,8 +24,15 @@ export interface ShotDecision {
   notes?: string;
   /** Token usage reported by the model for this decision. */
   usage?: { inputTokens?: number; outputTokens?: number };
-  /** Resolved model id, recorded so results are comparable only within a version. */
+  /** Model id the Gateway reported. An alias, not a resolved version. */
   modelId?: string;
+  /** Gateway generation id, for cross-checking against the Gateway request logs. */
+  generationId?: string;
+  /** List-price cost of the call in USD, as reported by the Gateway. */
+  marketCostUsd?: number;
+  /** Attempts the call took, and time spent waiting out rate limits. */
+  attempts?: number;
+  retryWaitMs?: number;
 }
 
 export interface Strategy {
