@@ -26,6 +26,21 @@ Five strategies play the same seeded fleet layouts:
 The headline number is **mean shots to sink the fleet** — lower is better. 17 is
 perfect, 100 is the worst possible.
 
+### First full result (60 games, `jev-1.13.0`)
+
+| strategy | mean shots | |
+| --- | --- | --- |
+| Jev hybrid (top 16) | **46.0** | matches density; not significantly better (p = 0.13) |
+| Probability density | 48.3 | best code-only player |
+| Hunt / Target | 51.9 | |
+| Jev pure (per-cell list) | 85.5 | beats random, loses to hunt/target by 33.6 shots |
+| Random | 95.3 | floor |
+
+The model's contribution appears **only when code narrows the field first**.
+`jevHybrid` beats a competent heuristic decisively but merely matches the density
+baseline; `jevPure`, choosing from ~90 undifferentiated cells, is closer to random
+than to a fifty-line rule. Full analysis in [docs/results.md](docs/results.md).
+
 ## Requirements
 
 - Node 20.12 or later, for `process.loadEnvFile` (developed on Node 26)
