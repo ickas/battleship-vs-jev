@@ -164,6 +164,25 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   font-size: 13px;
 }
 
+.mock-banner {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  background: #3a2e12;
+  border: 1px solid #6d5720;
+  border-radius: var(--radius);
+  color: #f0d99a;
+  font-size: 13px;
+}
+.mock-banner code { background: #241d0b; padding: 1px 5px; border-radius: 4px; }
+
+.share { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; margin-top: 14px; }
+.link-button {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  font-size: 12px;
+  background: #1b2634;
+}
+
 .board-wrap { display: flex; justify-content: center; }
 
 .board {

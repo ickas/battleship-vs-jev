@@ -151,3 +151,59 @@ describe('concurrent shots', () => {
     expect(results.every((r) => r.status === 'rejected')).toBe(true);
   }, 30_000);
 });
+
+describe('layout families', () => {
+  const onEdge = (c: { row: number; col: number }) =>
+    c.row === 0 || c.col === 0 || c.row === 9 || c.col === 9;
+
+  async function revealFleet(layoutFamily: 'random' | 'edge' | 'centre' | 'adversarial') {
+    const game = new GameSession({
+      strategyId: 'density',
+      client: new MockJevClient(),
+      seed: 5,
+      layoutFamily,
+    });
+    while (!game.isOver) await game.step();
+    return game.snapshot().fleet!;
+  }
+
+  it('honours the requested family and records it', async () => {
+    const game = new GameSession({
+      strategyId: 'density',
+      client: new MockJevClient(),
+      seed: 5,
+      layoutFamily: 'edge',
+    });
+    expect(game.layoutFamily).toBe('edge');
+    expect(game.snapshot().layoutFamily).toBe('edge');
+  });
+
+  it('actually places ships where the family says', async () => {
+    const edge = (await revealFleet('edge')).flatMap((s) => s.cells);
+    expect(edge.every(onEdge)).toBe(true);
+
+    const centre = (await revealFleet('centre')).flatMap((s) => s.cells);
+    expect(centre.some(onEdge)).toBe(false);
+  }, 30_000);
+
+  it('records manual when the player supplied a layout', () => {
+    const fleet = randomFleet(config, makeRng(2));
+    const game = new GameSession({
+      strategyId: 'density',
+      client: new MockJevClient(),
+      seed: 5,
+      fleet,
+    });
+    expect(game.layoutFamily).toBe('manual');
+  });
+
+  it('exposes the seed, so a run can be reproduced from the snapshot', () => {
+    const game = new GameSession({ strategyId: 'density', client: new MockJevClient(), seed: 1234 });
+    expect(game.snapshot().seed).toBe(1234);
+  });
+
+  it('defaults to random when no family is given', () => {
+    const game = new GameSession({ strategyId: 'density', client: new MockJevClient(), seed: 1 });
+    expect(game.layoutFamily).toBe('random');
+  });
+});

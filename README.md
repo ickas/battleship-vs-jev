@@ -155,6 +155,40 @@ Two Jev players, identical except that one uses a history of its opponent and on
 does not. Reports the win rate and whether the difference is distinguishable from
 noise.
 
+## The web UI
+
+```bash
+npm start   # http://localhost:3000
+```
+
+Settings live in the query string, so a link reproduces a run exactly:
+
+```
+http://localhost:3000/?strategy=jevHybrid&representation=semantic&layout=adversarial&seed=77
+```
+
+| parameter | values |
+| --- | --- |
+| `strategy` | `random`, `huntTarget`, `density`, `jevPure`, `jevHybrid` |
+| `representation` | `cellList`, `rowStrings`, `semantic` (dropped for code-only strategies) |
+| `layout` | `random`, `edge`, `centre`, `adversarial`, `manual` |
+| `seed` | any integer; the same seed gives the same fleet |
+
+Changing a control rewrites the URL in place, and "Copy link" puts it on the
+clipboard.
+
+**Mock mode is deliberately not one of these.** It replaces the model with
+code-side density, which changes what the numbers *mean* rather than what is
+being measured, so it is a server-side switch:
+
+```bash
+JEV_MOCK=1 npm start
+```
+
+The server ignores a `mock` field in a request body, so no page, link or stray
+click can turn it on, and the UI shows a banner whenever it is active. Use it
+for demos and UI work without spending calls; never for results.
+
 ## Architecture
 
 ```

@@ -10,6 +10,7 @@ import { ALL_STRATEGY_IDS, strategyUsesModel } from '../bench/strategies.js';
 import { REPRESENTATIONS } from '../jev/representations.js';
 import { validateFleet } from '../engine/placement.js';
 import { makeConfig } from '../engine/config.js';
+import { LAYOUT_DESCRIPTIONS, LAYOUT_FAMILIES, type LayoutFamily } from '../engine/layouts.js';
 import type { PlacedShip } from '../engine/types.js';
 import { rebuildFleet } from './fleetInput.js';
 import { GameSession } from './gameSession.js';
@@ -32,6 +33,14 @@ const MAX_BODY_BYTES = 1_000_000;
  * that actually answered, and is not subject to the Gateway free tier's rate
  * limit. The Gateway is used when only that key is configured.
  */
+/** Validates a layout family from an untrusted request body. */
+function parseLayoutFamily(value: unknown): LayoutFamily {
+  if (typeof value !== 'string') return 'random';
+  // 'mixed' is a batch concept; a single game gets a concrete family.
+  if (value === 'mixed' || !LAYOUT_FAMILIES.includes(value as LayoutFamily)) return 'random';
+  return value as LayoutFamily;
+}
+
 function createLiveClient(): { client: JevClient; transport: 'direct' | 'gateway' } | undefined {
   if (process.env.TYPESAFE_API_KEY) {
     return {
@@ -64,6 +73,15 @@ function createLiveClient(): { client: JevClient; transport: 'direct' | 'gateway
 const live = createLiveClient();
 const liveClient = live?.client;
 const hasApiKey = live !== undefined;
+/**
+ * Mock mode is a server-side switch, set with JEV_MOCK, never a request field.
+ *
+ * It replaces the model with code-side density, so it changes what the numbers
+ * *mean* rather than what is being measured. Every other option here is a real
+ * experimental dimension; this one is a "these are not results" flag, so it is
+ * deliberately not something a page, a link or a stray click can turn on.
+ */
+const MOCK_MODE = /^(1|true|yes)$/i.test(process.env.JEV_MOCK ?? '');
 const mockClient = new MockJevClient({ latencyMs: 120 });
 
 const sessions = new Map<string, GameSession>();
@@ -118,9 +136,10 @@ async function serveStatic(pathname: string, res: ServerResponse): Promise<void>
   }
 }
 
-function pickClient(strategyId: string, useMock: boolean): JevClient {
+function pickClient(strategyId: string): JevClient {
+  // Code-only strategies never call the client, so the mock is fine for them.
   if (!strategyUsesModel(strategyId)) return mockClient;
-  if (useMock) return mockClient;
+  if (MOCK_MODE) return mockClient;
   if (!liveClient) {
     throw new Error(
       'No Jev credentials on the server, so Jev strategies cannot run. Set TYPESAFE_API_KEY ' +
@@ -144,7 +163,12 @@ const server = createServer(async (req, res) => {
           description: r.description,
         })),
         liveClientAvailable: hasApiKey,
-        transport: live?.transport ?? 'none',
+        transport: MOCK_MODE ? 'mock' : (live?.transport ?? 'none'),
+        mockMode: MOCK_MODE,
+        layoutFamilies: LAYOUT_FAMILIES.filter((f) => f !== 'mixed').map((id) => ({
+          id,
+          description: LAYOUT_DESCRIPTIONS[id],
+        })),
         defaultConfig: makeConfig(),
       });
       return;
@@ -192,7 +216,8 @@ const server = createServer(async (req, res) => {
         seed: body.seed !== undefined ? Number(body.seed) : undefined,
         allowTouching,
         fleet: playerFleet,
-        client: pickClient(strategyId, body.mock === true),
+        layoutFamily: parseLayoutFamily(body.layoutFamily),
+        client: pickClient(strategyId),
       });
 
       sessions.set(session.id, session);
@@ -264,6 +289,11 @@ const isEntryPoint = process.argv[1] !== undefined
 if (isEntryPoint) {
   server.listen(PORT, () => {
     console.log(`Battleship vs. Jev running at http://localhost:${PORT}`);
+    if (MOCK_MODE) {
+      console.log(
+        'JEV_MOCK is set: Jev strategies answer from code-side density. These are NOT results.',
+      );
+    }
     console.log(
       live?.transport === 'direct'
         ? `TypeSafe API key found: Jev strategies call TypeSafe directly${

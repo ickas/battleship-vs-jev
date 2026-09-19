@@ -17,6 +17,12 @@
       <div class="status" id="client-status" role="status"></div>
     </header>
 
+    <p class="mock-banner" id="mock-banner" role="status" hidden>
+      <strong>Mock mode.</strong> Jev strategies are answering from code-side density, not the
+      model. These are not benchmark results. Unset <code>JEV_MOCK</code> and restart to use the
+      real model.
+    </p>
+
     <main>
       <section class="panel controls" aria-label="Game setup">
         <div class="field">
@@ -33,10 +39,8 @@
 
         <div class="field">
           <label for="layout-mode">Fleet layout</label>
-          <select id="layout-mode">
-            <option value="seed">Random from seed</option>
-            <option value="manual">Place it myself</option>
-          </select>
+          <select id="layout-mode"></select>
+          <p class="hint" id="layout-hint"></p>
         </div>
 
         <div class="field" id="seed-field">
@@ -57,14 +61,6 @@
           </div>
         </div>
 
-        <div class="field checkbox">
-          <label><input id="mock" type="checkbox" /> Mock mode</label>
-          <p class="hint">
-            Answers from code-side density instead of the model. Useful without an API key;
-            never a benchmark result.
-          </p>
-        </div>
-
         <div class="buttons">
           <button id="new-game" class="primary">New game</button>
           <button id="step" disabled>Fire one shot</button>
@@ -72,6 +68,11 @@
         </div>
 
         <p class="error" id="error" role="alert" hidden></p>
+
+        <p class="hint share">
+          This page's settings live in the URL, so a link reproduces the run.
+          <button id="copy-link" type="button" class="link-button">Copy link</button>
+        </p>
       </section>
 
       <section class="panel board-panel" aria-label="Board">

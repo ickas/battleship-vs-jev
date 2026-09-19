@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Board } from '../engine/board.js';
 import { makeConfig } from '../engine/config.js';
 import { coordToLabel } from '../engine/coords.js';
-import { randomFleet } from '../engine/placement.js';
+import { makeLayout, type LayoutFamily } from '../engine/layouts.js';
 import { makeRng, type Rng } from '../engine/rng.js';
 import type { GameConfig, PlacedShip } from '../engine/types.js';
 import type { ShotRecord } from '../engine/game.js';
@@ -17,7 +17,12 @@ export interface CreateSessionOptions {
   temperature?: number;
   seed?: number;
   allowTouching?: boolean;
-  /** Player-supplied layout. A random valid fleet is generated when absent. */
+  /**
+   * Which family of fleet layout to generate. The family changes the answer -
+   * see src/engine/layouts.ts - so it is recorded in the snapshot.
+   */
+  layoutFamily?: LayoutFamily;
+  /** Player-supplied layout. Overrides `layoutFamily` when present. */
   fleet?: PlacedShip[];
   client: JevClient;
 }
@@ -31,6 +36,8 @@ export class GameSession {
   readonly config: GameConfig;
   readonly strategy: Strategy;
   readonly createdAt = new Date().toISOString();
+  readonly seed: number;
+  readonly layoutFamily: LayoutFamily | 'manual';
 
   private readonly board: Board;
   private readonly rng: Rng;
@@ -45,10 +52,12 @@ export class GameSession {
 
   constructor(options: CreateSessionOptions) {
     this.config = makeConfig({ allowTouching: options.allowTouching ?? true });
-    const seed = options.seed ?? Math.floor(Math.random() * 1e9);
-    this.rng = makeRng(seed);
+    this.seed = options.seed ?? Math.floor(Math.random() * 1e9);
+    this.rng = makeRng(this.seed);
 
-    const fleet = options.fleet ?? randomFleet(this.config, makeRng(seed));
+    this.layoutFamily = options.fleet ? 'manual' : (options.layoutFamily ?? 'random');
+    const fleet =
+      options.fleet ?? makeLayout(this.layoutFamily as LayoutFamily, this.config, makeRng(this.seed));
     this.board = new Board(this.config, fleet);
 
     this.strategy = buildStrategy(options.strategyId, {
@@ -121,6 +130,8 @@ export class GameSession {
     return {
       id: this.id,
       strategy: { id: this.strategy.id, name: this.strategy.name, usesModel: this.strategy.usesModel },
+      seed: this.seed,
+      layoutFamily: this.layoutFamily,
       config: this.config,
       cells: view.cells,
       sunkShipIds: view.sunkShipIds,

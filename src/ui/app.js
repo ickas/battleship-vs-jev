@@ -6,6 +6,43 @@
 const LETTERS = 'ABCDEFGHIJ';
 const el = (id) => document.getElementById(id);
 
+/**
+ * Settings that define a run, mirrored to the query string so a link
+ * reproduces it. Deliberately excludes mock mode: that is a server-side switch
+ * (JEV_MOCK) because it changes what the numbers mean rather than what is being
+ * measured, and a link that quietly disables the model would be a trap.
+ */
+const URL_KEYS = ['strategy', 'representation', 'layout', 'seed', 'topK', 'temperature'];
+
+function readUrlState() {
+  const params = new URLSearchParams(window.location.search);
+  const out = {};
+  for (const key of URL_KEYS) {
+    const value = params.get(key);
+    if (value !== null && value !== '') out[key] = value;
+  }
+  return out;
+}
+
+/** Writes the current controls to the URL without adding a history entry. */
+function writeUrlState() {
+  const params = new URLSearchParams();
+  params.set('strategy', el('strategy').value);
+  params.set('layout', el('layout-mode').value);
+
+  // Only include what actually applies to the current selection.
+  const usesModel = strategyUsesModel(el('strategy').value);
+  if (usesModel) params.set('representation', el('representation').value);
+  if (el('layout-mode').value !== 'manual') params.set('seed', el('seed').value);
+
+  const url = `${window.location.pathname}?${params.toString()}`;
+  window.history.replaceState(null, '', url);
+}
+
+function strategyUsesModel(id) {
+  return state.config?.strategies.find((s) => s.id === id)?.usesModel ?? false;
+}
+
 const state = {
   config: null,
   game: null,
@@ -172,6 +209,11 @@ function handlePlacementClick(row, col) {
 
 function setLayoutMode(mode) {
   const manual = mode === 'manual';
+  const family = state.config.layoutFamilies?.find((f) => f.id === mode);
+  el('layout-hint').textContent = manual
+    ? 'Place each ship yourself, then start the game.'
+    : (family?.description ?? '');
+  writeUrlState();
   state.placing.active = manual;
   state.game = null;
   el('seed-field').hidden = manual;
@@ -399,7 +441,7 @@ async function newGame() {
     strategyId: el('strategy').value,
     representation: el('representation').value,
     seed: Number(el('seed').value),
-    mock: el('mock').checked,
+    layoutFamily: el('layout-mode').value,
   };
 
   if (state.placing.active) {
@@ -462,7 +504,8 @@ async function toggleAuto() {
 
 function syncStrategyHints() {
   const strategyId = el('strategy').value;
-  const usesModel = state.config.strategies.find((s) => s.id === strategyId)?.usesModel ?? false;
+  const usesModel = strategyUsesModel(strategyId);
+  writeUrlState();
 
   el('representation-field').style.display = usesModel ? '' : 'none';
   el('strategy-hint').textContent = usesModel
@@ -496,8 +539,48 @@ async function init() {
   }
   representationSelect.value = 'semantic';
 
+  // Fleet layout: the families the server offers, plus manual placement.
+  const layoutSelect = el('layout-mode');
+  for (const family of state.config.layoutFamilies ?? []) {
+    const option = document.createElement('option');
+    option.value = family.id;
+    option.textContent = family.id.charAt(0).toUpperCase() + family.id.slice(1);
+    option.title = family.description;
+    layoutSelect.appendChild(option);
+  }
+  const manualOption = document.createElement('option');
+  manualOption.value = 'manual';
+  manualOption.textContent = 'Place it myself';
+  layoutSelect.appendChild(manualOption);
+  layoutSelect.value = 'random';
+
+  // A link fully determines the run, so apply the URL before anything else.
+  const fromUrl = readUrlState();
+  if (fromUrl.strategy && state.config.strategies.some((s) => s.id === fromUrl.strategy)) {
+    strategySelect.value = fromUrl.strategy;
+  }
+  if (
+    fromUrl.representation &&
+    state.config.representations.some((r) => r.id === fromUrl.representation)
+  ) {
+    representationSelect.value = fromUrl.representation;
+  }
+  if (fromUrl.layout && [...layoutSelect.options].some((o) => o.value === fromUrl.layout)) {
+    layoutSelect.value = fromUrl.layout;
+  }
+  if (fromUrl.seed !== undefined && Number.isFinite(Number(fromUrl.seed))) {
+    el('seed').value = String(Math.max(0, Math.trunc(Number(fromUrl.seed))));
+  }
+
+  if (state.config.mockMode) {
+    el('mock-banner').hidden = false;
+  }
+
   const status = el('client-status');
-  if (state.config.liveClientAvailable) {
+  if (state.config.mockMode) {
+    status.textContent = 'Mock mode: not the real model';
+    status.classList.add('offline');
+  } else if (state.config.liveClientAvailable) {
     status.textContent =
       state.config.transport === 'direct'
         ? 'Live: TypeSafe API (direct)'
@@ -506,7 +589,6 @@ async function init() {
   } else {
     status.textContent = 'No API key: Jev strategies unavailable';
     status.classList.add('offline');
-    el('mock').checked = true;
   }
 
   const subtitle = document.querySelector('.subtitle');
@@ -519,9 +601,23 @@ async function init() {
   }
 
   syncStrategyHints();
+  setLayoutMode(layoutSelect.value);
   strategySelect.addEventListener('change', syncStrategyHints);
   representationSelect.addEventListener('change', syncStrategyHints);
   el('layout-mode').addEventListener('change', (event) => setLayoutMode(event.target.value));
+  el('seed').addEventListener('change', writeUrlState);
+  el('copy-link').addEventListener('click', async () => {
+    writeUrlState();
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      el('copy-link').textContent = 'Copied';
+      setTimeout(() => (el('copy-link').textContent = 'Copy link'), 1500);
+    } catch {
+      // Clipboard access can be refused; the URL bar already shows the link.
+      el('copy-link').textContent = 'See URL bar';
+      setTimeout(() => (el('copy-link').textContent = 'Copy link'), 1500);
+    }
+  });
   el('rotate').addEventListener('click', () => {
     state.placing.orientation =
       state.placing.orientation === 'horizontal' ? 'vertical' : 'horizontal';
@@ -539,7 +635,11 @@ async function init() {
   el('auto').addEventListener('click', toggleAuto);
 
   buildBoard(state.config.defaultConfig.rows, state.config.defaultConfig.cols);
-  await newGame();
+  if (layoutSelect.value === 'manual') {
+    setLayoutMode('manual');
+  } else {
+    await newGame();
+  }
 }
 
 init().catch((error) => showError(error.message));
