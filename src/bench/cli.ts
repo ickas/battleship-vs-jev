@@ -68,6 +68,17 @@ function parseArgs(argv: string[]): Args {
   };
 }
 
+/**
+ * The Gateway reports the alias that was requested, never the Jev build that
+ * answered, and no concrete version can be pinned. Results are only comparable
+ * within one model version, so this has to be said rather than implied.
+ */
+const MODEL_VERSION_NOTE =
+  'Results are only comparable within one model version. The Gateway reports only\n' +
+  'the alias that was requested, not the build that answered, so a silent model\n' +
+  'update would be invisible here. Each call\'s generationId is recorded in the\n' +
+  'JSON output for cross-checking against the Gateway request logs.';
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const config = makeConfig({ allowTouching: args.allowTouching });
@@ -129,8 +140,8 @@ async function main(): Promise<void> {
 
   const modelIds = [...new Set(report.summaries.flatMap((s) => s.modelIds))];
   if (modelIds.length > 0) {
-    console.log(`\nModel version(s): ${modelIds.join(', ')}`);
-    console.log('Results are only comparable within a single model version.');
+    console.log(`\nModel id(s) reported: ${modelIds.join(', ')}`);
+    console.log(MODEL_VERSION_NOTE);
   }
 
   await mkdir(args.out, { recursive: true });

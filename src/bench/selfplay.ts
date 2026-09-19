@@ -81,7 +81,12 @@ async function main(): Promise<void> {
     console.log(`\n${report.errors.length} error(s); first few:`);
     for (const error of report.errors.slice(0, 5)) console.log(`  ${error}`);
   }
-  if (report.modelIds.length > 0) console.log(`\nModel version(s): ${report.modelIds.join(', ')}`);
+  if (report.modelIds.length > 0) console.log(`\nModel id(s) reported: ${report.modelIds.join(', ')}`);
+  console.log(
+    'The Gateway reports only the requested alias, not the Jev build that answered,\n' +
+      'so results are comparable only within one model version and a silent update\n' +
+      'would be invisible. Each generationId is recorded for the Gateway logs.',
+  );
 
   await mkdir(out, { recursive: true });
   const stamp = new Date().toISOString().replaceAll(':', '-').slice(0, 19);
