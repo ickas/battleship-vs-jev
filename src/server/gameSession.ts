@@ -36,6 +36,12 @@ export class GameSession {
   private readonly rng: Rng;
   private readonly records: ShotRecord[] = [];
   private lastError?: string;
+  /**
+   * Serializes shots. Two overlapping requests would otherwise both pass the
+   * isOver check and call the strategy against the same board, so the second
+   * could pick a cell the first was about to fire at.
+   */
+  private inFlight: Promise<ShotRecord> | undefined;
 
   constructor(options: CreateSessionOptions) {
     this.config = makeConfig({ allowTouching: options.allowTouching ?? true });
@@ -57,8 +63,22 @@ export class GameSession {
     return this.board.isFleetSunk;
   }
 
-  /** Takes one shot. Returns the record, or throws with the reason it failed. */
+  /**
+   * Takes one shot. Returns the record, or throws with the reason it failed.
+   * Concurrent calls queue behind each other rather than racing.
+   */
   async step(): Promise<ShotRecord> {
+    const previous = this.inFlight?.catch(() => undefined) ?? Promise.resolve();
+    const next = previous.then(() => this.stepOnce());
+    this.inFlight = next;
+    try {
+      return await next;
+    } finally {
+      if (this.inFlight === next) this.inFlight = undefined;
+    }
+  }
+
+  private async stepOnce(): Promise<ShotRecord> {
     if (this.isOver) throw new Error('The game is already over');
 
     const startedAt = performance.now();

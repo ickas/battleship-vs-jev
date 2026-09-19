@@ -94,3 +94,60 @@ describe('GameSession', () => {
     expect(() => session('nope')).toThrow(/Unknown strategy/);
   });
 });
+
+describe('concurrent shots', () => {
+  it('serializes overlapping step calls instead of racing', async () => {
+    const game = new GameSession({
+      strategyId: 'density',
+      client: new MockJevClient({ latencyMs: 5 }),
+      seed: 12,
+    });
+
+    // Fire several shots at once; without a lock these would evaluate against
+    // the same board and could choose the same cell.
+    const records = await Promise.all([game.step(), game.step(), game.step(), game.step()]);
+
+    const labels = records.map((r) => r.label);
+    expect(new Set(labels).size).toBe(4);
+    expect(records.map((r) => r.index).sort((a, b) => a - b)).toEqual([1, 2, 3, 4]);
+    expect(game.snapshot().shots).toBe(4);
+  });
+
+  it('lets a later shot proceed after an earlier one fails', async () => {
+    let calls = 0;
+    const flaky = {
+      log: [],
+      stats: { calls: 0, failures: 0, inputTokens: 0, outputTokens: 0, totalLatencyMs: 0 },
+      ask: async () => {
+        calls++;
+        if (calls === 1) throw new Error('transient');
+        return {
+          answers: { target: { type: 'choice' as const, choice: 'A1' } },
+          confidence: {},
+          usage: {},
+          modelId: 'test',
+          latencyMs: 0,
+        };
+      },
+    };
+
+    const game = new GameSession({ strategyId: 'jevHybrid', client: flaky, seed: 3 });
+    const results = await Promise.allSettled([game.step(), game.step()]);
+
+    expect(results[0]!.status).toBe('rejected');
+    expect(results[1]!.status).toBe('fulfilled');
+    expect(game.snapshot().shots).toBe(1);
+  });
+
+  it('rejects every queued shot once the game is over', async () => {
+    const game = new GameSession({
+      strategyId: 'density',
+      client: new MockJevClient(),
+      seed: 9,
+    });
+    while (!game.isOver) await game.step();
+
+    const results = await Promise.allSettled([game.step(), game.step()]);
+    expect(results.every((r) => r.status === 'rejected')).toBe(true);
+  }, 30_000);
+});
