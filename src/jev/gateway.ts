@@ -44,6 +44,20 @@ export interface GatewayJevClientOptions {
   keepFullLog?: boolean;
   /** Most recent calls retained in `log`. Defaults to 500. */
   maxLogEntries?: number;
+  /**
+   * Minimum gap between the start of one request and the next, in
+   * milliseconds. The Gateway's free tier rate-limits this model hard enough
+   * to fail a benchmark outright, and pacing is cheaper than retrying into the
+   * same limit. 0 disables it.
+   */
+  minIntervalMs?: number;
+  /**
+   * Extra attempts after the AI SDK's own retries are exhausted, for rate
+   * limits specifically. Each waits longer than the last.
+   */
+  rateLimitRetries?: number;
+  /** Base backoff for those retries, doubling each attempt. Defaults to 4000ms. */
+  rateLimitBackoffMs?: number;
   /** Gateway-specific per-request options, e.g. `{ zeroDataRetention: true }`. */
   gatewayOptions?: Record<string, unknown>;
   /** Injected in tests. Defaults to the AI SDK's `experimental_evaluate`. */
@@ -57,6 +71,12 @@ export class GatewayJevClient implements JevClient {
   private readonly maxRetries: number;
   private readonly keepFullLog: boolean;
   private readonly maxLogEntries: number;
+  private readonly minIntervalMs: number;
+  private readonly rateLimitRetries: number;
+  private readonly rateLimitBackoffMs: number;
+  /** Serializes pacing so concurrent callers queue rather than all firing at once. */
+  private pacingChain: Promise<void> = Promise.resolve();
+  private lastRequestAt = 0;
   private readonly gatewayOptions?: Record<string, unknown>;
   private readonly evaluateFn: typeof evaluate;
   private readonly onCall?: (log: JevCallLog) => void;
@@ -81,6 +101,9 @@ export class GatewayJevClient implements JevClient {
     this.maxRetries = options.maxRetries ?? 2;
     this.keepFullLog = options.keepFullLog ?? true;
     this.maxLogEntries = options.maxLogEntries ?? 500;
+    this.minIntervalMs = options.minIntervalMs ?? 0;
+    this.rateLimitRetries = options.rateLimitRetries ?? 0;
+    this.rateLimitBackoffMs = options.rateLimitBackoffMs ?? 4000;
     this.gatewayOptions = options.gatewayOptions;
     this.evaluateFn = options.evaluateFn ?? evaluate;
     this.onCall = options.onCall;
@@ -92,12 +115,14 @@ export class GatewayJevClient implements JevClient {
 
   async ask(request: JevRequest): Promise<JevResponse> {
     assertRequestIsWithinLimits(request);
+    await this.pace(request.abortSignal);
 
     const startedAt = new Date().toISOString();
     const start = performance.now();
 
     try {
-      const result = await this.evaluateFn({
+      const result = await this.withRateLimitRetry(request.abortSignal, () =>
+        this.evaluateFn({
         model: this.evaluationModel as never,
         state: request.state as never,
         questions: request.questions as never,
@@ -106,7 +131,8 @@ export class GatewayJevClient implements JevClient {
         ...(this.gatewayOptions
           ? { providerOptions: { gateway: this.gatewayOptions as never } }
           : {}),
-      });
+        }),
+      );
 
       const latencyMs = performance.now() - start;
       const response: JevResponse = {
@@ -156,6 +182,48 @@ export class GatewayJevClient implements JevClient {
 
       throw error;
     }
+  }
+
+  /**
+   * Holds each request to at least `minIntervalMs` after the previous one.
+   * Chained rather than checked, so parallel callers queue instead of all
+   * observing the same stale timestamp and firing together.
+   */
+  private async pace(abortSignal?: AbortSignal): Promise<void> {
+    if (this.minIntervalMs <= 0) return;
+
+    const wait = this.pacingChain.then(async () => {
+      const elapsed = Date.now() - this.lastRequestAt;
+      const remaining = this.minIntervalMs - elapsed;
+      if (remaining > 0) await sleep(remaining, abortSignal);
+      this.lastRequestAt = Date.now();
+    });
+
+    // Keep the chain alive even if this link is aborted.
+    this.pacingChain = wait.catch(() => undefined);
+    await wait;
+  }
+
+  /**
+   * Retries a rate-limited call beyond the AI SDK's own attempts, backing off
+   * further each time. Any other failure is rethrown immediately - only rate
+   * limits are worth waiting out.
+   */
+  private async withRateLimitRetry<T>(
+    abortSignal: AbortSignal | undefined,
+    call: () => Promise<T>,
+  ): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= this.rateLimitRetries; attempt++) {
+      try {
+        return await call();
+      } catch (error) {
+        lastError = error;
+        if (!isRateLimitError(error) || attempt === this.rateLimitRetries) throw error;
+        await sleep(this.rateLimitBackoffMs * 2 ** attempt, abortSignal);
+      }
+    }
+    throw lastError;
   }
 
   private record(log: JevCallLog): void {
@@ -285,6 +353,33 @@ export function assertRequestIsWithinLimits(request: JevRequest): void {
  */
 export function estimateTokens(chars: number): number {
   return Math.ceil(chars / 4);
+}
+
+/** True for a Gateway 429 or an error that names a rate limit. */
+export function isRateLimitError(error: unknown): boolean {
+  if (!error) return false;
+  const candidate = error as { statusCode?: number; status?: number; name?: string; message?: string };
+  if (candidate.statusCode === 429 || candidate.status === 429) return true;
+  const text = `${candidate.name ?? ''} ${candidate.message ?? ''}`.toLowerCase();
+  return text.includes('rate limit') || text.includes('rate-limited');
+}
+
+function sleep(ms: number, abortSignal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (abortSignal?.aborted) {
+      reject(abortSignal.reason);
+      return;
+    }
+    const timer = setTimeout(() => {
+      abortSignal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortSignal?.reason);
+    };
+    abortSignal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 function describeError(error: unknown): string {

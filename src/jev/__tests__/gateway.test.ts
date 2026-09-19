@@ -4,6 +4,7 @@ import {
   extractConfidence,
   extractGatewayMetadata,
   GatewayJevClient,
+  isRateLimitError,
   JEV_LIMITS,
 } from '../gateway.js';
 
@@ -223,5 +224,106 @@ describe('assertRequestIsWithinLimits', () => {
         questions: { q: { type: 'boolean', instructions: 'is it?' } },
       }),
     ).toThrow(/over Jev's 32000 limit/);
+  });
+});
+
+describe('rate limiting', () => {
+  it('recognises a Gateway 429 and rate-limit wording', () => {
+    const byStatus = new Error('Too Many Requests');
+    (byStatus as { statusCode?: number }).statusCode = 429;
+    expect(isRateLimitError(byStatus)).toBe(true);
+
+    expect(
+      isRateLimitError(new Error('Free tier requests on this model are rate-limited.')),
+    ).toBe(true);
+    expect(isRateLimitError(new Error('Model not found'))).toBe(false);
+    expect(isRateLimitError(undefined)).toBe(false);
+  });
+
+  it('retries a rate-limited call and succeeds', async () => {
+    let attempts = 0;
+    const flaky = (async () => {
+      attempts++;
+      if (attempts < 3) {
+        const error = new Error('rate-limited');
+        (error as { statusCode?: number }).statusCode = 429;
+        throw error;
+      }
+      return {
+        answers: { cell: { type: 'choice', choice: 'A1' } },
+        usage: { inputTokens: 1, outputTokens: 0 },
+        providerMetadata: undefined,
+        response: { timestamp: new Date(), modelId: 'jev' },
+      };
+    }) as never;
+
+    const client = new GatewayJevClient({
+      evaluateFn: flaky,
+      rateLimitRetries: 3,
+      rateLimitBackoffMs: 1,
+    });
+
+    const response = await client.ask(choiceRequest);
+    expect(attempts).toBe(3);
+    expect(response.modelId).toBe('jev');
+    expect(client.stats.failures).toBe(0);
+  });
+
+  it('gives up after the configured retries and records the failure', async () => {
+    let attempts = 0;
+    const always = (async () => {
+      attempts++;
+      const error = new Error('rate-limited');
+      (error as { statusCode?: number }).statusCode = 429;
+      throw error;
+    }) as never;
+
+    const client = new GatewayJevClient({
+      evaluateFn: always,
+      rateLimitRetries: 2,
+      rateLimitBackoffMs: 1,
+    });
+
+    await expect(client.ask(choiceRequest)).rejects.toThrow(/rate-limited/);
+    expect(attempts).toBe(3); // the first call plus two retries
+    expect(client.stats.failures).toBe(1);
+  });
+
+  it('does not retry an error that is not a rate limit', async () => {
+    let attempts = 0;
+    const failing = (async () => {
+      attempts++;
+      throw new Error('Model not found');
+    }) as never;
+
+    const client = new GatewayJevClient({
+      evaluateFn: failing,
+      rateLimitRetries: 5,
+      rateLimitBackoffMs: 1,
+    });
+
+    await expect(client.ask(choiceRequest)).rejects.toThrow(/Model not found/);
+    expect(attempts).toBe(1);
+  });
+
+  it('paces consecutive requests by at least the configured interval', async () => {
+    const client = new GatewayJevClient({ evaluateFn: fakeEvaluate(), minIntervalMs: 60 });
+    const start = Date.now();
+    await client.ask(choiceRequest);
+    await client.ask(choiceRequest);
+    await client.ask(choiceRequest);
+    // Two gaps between three requests.
+    expect(Date.now() - start).toBeGreaterThanOrEqual(110);
+  });
+
+  it('paces parallel requests instead of letting them all fire at once', async () => {
+    const client = new GatewayJevClient({ evaluateFn: fakeEvaluate(), minIntervalMs: 50 });
+    const start = Date.now();
+    await Promise.all([
+      client.ask(choiceRequest),
+      client.ask(choiceRequest),
+      client.ask(choiceRequest),
+    ]);
+    expect(Date.now() - start).toBeGreaterThanOrEqual(90);
   });
 });

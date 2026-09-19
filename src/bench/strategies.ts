@@ -47,7 +47,15 @@ export function strategyUsesModel(id: string): boolean {
  * explicitly asked, so a missing API key fails loudly instead of silently
  * producing numbers that did not come from the model.
  */
-export function buildClient(options: { mock?: boolean; keepFullLog?: boolean } = {}): JevClient {
+export function buildClient(
+  options: {
+    mock?: boolean;
+    keepFullLog?: boolean;
+    /** Minimum gap between requests, for free-tier rate limits. */
+    minIntervalMs?: number;
+    rateLimitRetries?: number;
+  } = {},
+): JevClient {
   if (options.mock) return new MockJevClient();
 
   if (!process.env.AI_GATEWAY_API_KEY) {
@@ -56,5 +64,10 @@ export function buildClient(options: { mock?: boolean; keepFullLog?: boolean } =
         'with a stand-in client (mock results are not benchmark results).',
     );
   }
-  return new GatewayJevClient({ keepFullLog: options.keepFullLog ?? false });
+
+  return new GatewayJevClient({
+    keepFullLog: options.keepFullLog ?? false,
+    minIntervalMs: options.minIntervalMs ?? 0,
+    rateLimitRetries: options.rateLimitRetries ?? 4,
+  });
 }

@@ -24,6 +24,7 @@ interface Args {
   mock: boolean;
   out: string;
   allowTouching: boolean;
+  minIntervalMs: number;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -62,6 +63,7 @@ function parseArgs(argv: string[]): Args {
     temperature: Number(flags.get('temperature') ?? 0),
     mock: flags.get('mock') === 'true',
     out: flags.get('out') ?? 'results',
+    minIntervalMs: Number(flags.get('minIntervalMs') ?? 1500),
     allowTouching: flags.get('allowTouching') !== 'false',
   };
 }
@@ -72,7 +74,10 @@ async function main(): Promise<void> {
 
   // A real client is only required when a model strategy will actually call it.
   const needsModel = args.strategies.some(strategyUsesModel);
-  const client = buildClient({ mock: args.mock || !needsModel });
+  const client = buildClient({
+    mock: args.mock || !needsModel,
+    minIntervalMs: args.minIntervalMs,
+  });
 
   if (args.mock && needsModel) {
     console.warn(

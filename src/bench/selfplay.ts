@@ -27,7 +27,11 @@ async function main(): Promise<void> {
   if (mock) console.warn('WARNING: mock client. These are NOT benchmark results.\n');
 
   const config = makeConfig();
-  const client = buildClient({ mock, keepFullLog: false });
+  const client = buildClient({
+    mock,
+    keepFullLog: false,
+    minIntervalMs: Number(flag('minIntervalMs', '1500')),
+  });
 
   console.log(`Running ${games} self-play games (history on vs. history off)\n`);
 
