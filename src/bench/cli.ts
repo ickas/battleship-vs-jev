@@ -9,6 +9,7 @@ import {
   buildClient,
   buildStrategy,
   strategyUsesModel,
+  TRANSPORTS,
   type Transport,
 } from './strategies.js';
 import { loadEnv } from '../env.js';
@@ -105,9 +106,9 @@ const DIRECT_VERSION_NOTE =
  */
 function parseTransport(flags: Map<string, string>): Transport {
   if (flags.get('mock') === 'true') return 'mock';
-  const value = flags.get('transport') ?? 'gateway';
-  if (value !== 'gateway' && value !== 'direct' && value !== 'mock') {
-    throw new Error(`--transport must be gateway, direct or mock, got "${value}"`);
+  const value = (flags.get('transport') ?? 'gateway') as Transport;
+  if (!TRANSPORTS.includes(value)) {
+    throw new Error(`--transport must be one of ${TRANSPORTS.join(', ')}, got "${value}"`);
   }
   return value;
 }
@@ -193,7 +194,7 @@ async function main(): Promise<void> {
   const modelIds = [...new Set(report.summaries.flatMap((s) => s.modelIds))];
   if (modelIds.length > 0) {
     console.log(`\nModel id(s) reported: ${modelIds.join(', ')}`);
-    console.log(args.transport === 'direct' ? DIRECT_VERSION_NOTE : GATEWAY_VERSION_NOTE);
+    console.log(args.transport === 'gateway' ? GATEWAY_VERSION_NOTE : DIRECT_VERSION_NOTE);
   }
 
   await mkdir(args.out, { recursive: true });

@@ -1,3 +1,4 @@
+import { ClefClient } from '../jev/clef.js';
 import { DirectJevClient } from '../jev/direct.js';
 import { GatewayJevClient } from '../jev/gateway.js';
 import { MockJevClient } from '../jev/mock.js';
@@ -44,7 +45,9 @@ export function strategyUsesModel(id: string): boolean {
 }
 
 /** How a runner reaches Jev. */
-export type Transport = 'gateway' | 'direct' | 'mock';
+export type Transport = 'gateway' | 'direct' | 'clef' | 'clef-flash' | 'mock';
+
+export const TRANSPORTS: Transport[] = ['gateway', 'direct', 'clef', 'clef-flash', 'mock'];
 
 export interface ClientOptions {
   transport?: Transport;
@@ -71,6 +74,20 @@ export function buildClient(options: ClientOptions = {}): JevClient {
   const transport = options.transport ?? 'gateway';
 
   if (transport === 'mock') return new MockJevClient();
+
+  if (transport === 'clef' || transport === 'clef-flash') {
+    if (!process.env.CLOUDFLARE_ACCOUNT_ID || !process.env.CLOUDFLARE_API_TOKEN) {
+      throw new Error(
+        `--transport ${transport} needs CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN. ` +
+          'Create a token with the Workers AI read/run permission and put both in .env.local.',
+      );
+    }
+    return new ClefClient({
+      model: transport,
+      keepFullLog: options.keepFullLog ?? false,
+      minIntervalMs: options.minIntervalMs ?? 0,
+    });
+  }
 
   if (transport === 'direct') {
     if (!process.env.TYPESAFE_API_KEY) {

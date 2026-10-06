@@ -11,6 +11,14 @@ import type {
 } from './types.js';
 import { assertRequestIsWithinLimits, isRateLimitError } from './gateway.js';
 import { estimateCostUsd } from './pricing.js';
+import { fromSystemOneAnswers, toSystemOneQuestions } from './systemOne.js';
+
+// The wire format is shared with Clef; these names are kept for callers and
+// tests that predate the second backend.
+export {
+  toSystemOneQuestions as toTypeSafeQuestions,
+  fromSystemOneAnswers as fromTypeSafeAnswers,
+};
 
 /**
  * Talks to the TypeSafe API directly, instead of going through Vercel AI Gateway.
@@ -113,13 +121,13 @@ export class DirectJevClient implements JevClient {
     try {
       const result = await this.client.systemOne({
         state: (request.state ?? null) as never,
-        questions: toTypeSafeQuestions(request.questions) as never,
+        questions: toSystemOneQuestions(request.questions) as never,
         model: this.model,
         ...(request.abortSignal ? { signal: request.abortSignal } : {}),
       });
 
       const latencyMs = performance.now() - start;
-      const { answers, confidence } = fromTypeSafeAnswers(
+      const { answers, confidence } = fromSystemOneAnswers(
         result.answers as Record<string, unknown>,
       );
 
@@ -202,76 +210,6 @@ export class DirectJevClient implements JevClient {
     }
     this.onCall?.(log);
   }
-}
-
-/** Translates this project's question shapes into TypeSafe's. */
-export function toTypeSafeQuestions(
-  questions: Record<string, JevQuestion>,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-
-  for (const [id, question] of Object.entries(questions)) {
-    if (question.type === 'boolean') {
-      // The AI SDK's `boolean` is TypeSafe's "Noul".
-      out[id] = {
-        type: 'noul',
-        instructions: question.instructions,
-        ...(question.criteria ? { criteria: question.criteria } : {}),
-      };
-    } else if (question.type === 'choice') {
-      out[id] = {
-        type: 'choice',
-        instructions: question.instructions,
-        criteria: question.criteria,
-      };
-    } else {
-      out[id] = {
-        type: 'score',
-        instructions: question.instructions,
-        criteria: question.criteria,
-      };
-    }
-  }
-  return out;
-}
-
-/**
- * Translates TypeSafe's answers back, and lifts the per-answer `confidence`
- * into the separate map this project uses, matching the Gateway's shape.
- */
-export function fromTypeSafeAnswers(raw: Record<string, unknown>): {
-  answers: Record<string, JevAnswer>;
-  confidence: Record<string, number>;
-} {
-  const answers: Record<string, JevAnswer> = {};
-  const confidence: Record<string, number> = {};
-
-  for (const [id, value] of Object.entries(raw)) {
-    const answer = value as Record<string, unknown>;
-
-    if (answer.type === 'noul') {
-      answers[id] = { type: 'boolean', probability: Number(answer.noul) };
-      continue;
-    }
-
-    if (typeof answer.confidence === 'number') confidence[id] = answer.confidence;
-
-    if (answer.type === 'choice') {
-      answers[id] = {
-        type: 'choice',
-        choice: String(answer.choice),
-        probabilities: answer.probabilities as ChoiceAnswer['probabilities'],
-      };
-    } else if (answer.type === 'score') {
-      answers[id] = {
-        type: 'score',
-        score: Number(answer.score),
-        probabilities: answer.probabilities as ScoreAnswer['probabilities'],
-      };
-    }
-  }
-
-  return { answers, confidence };
 }
 
 function describeError(error: unknown): string {

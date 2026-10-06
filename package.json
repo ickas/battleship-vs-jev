@@ -21,7 +21,9 @@
     "repr": "tsx src/bench/representation.ts",
     "dev": "tsx watch src/server/index.ts",
     "start": "tsx src/server/index.ts",
-    "selfplay": "tsx src/bench/selfplay.ts"
+    "selfplay": "tsx src/bench/selfplay.ts",
+    "latency": "tsx scripts/measure-latency.mts",
+    "rounding": "tsx scripts/probe-probability-rounding.mts"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^4.0.87",
