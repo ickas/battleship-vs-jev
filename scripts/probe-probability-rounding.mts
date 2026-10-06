@@ -59,8 +59,28 @@ function decimalsUsed(v: number): number {
   return 7;
 }
 
+/**
+ * OpenRouter first, because it reaches all three models over one route and
+ * rounding is a property of the model rather than of the transport: comparing
+ * Jev through TypeSafe against Clef through Workers AI would leave open the
+ * possibility that a transport did the rounding. The per-vendor clients stay as
+ * a fallback for anyone without an OpenRouter key.
+ */
 async function build(): Promise<Array<{ name: string; client: JevClient }>> {
   const out: Array<{ name: string; client: JevClient }> = [];
+
+  if (process.env.OPENROUTER_API_KEY) {
+    const { OpenRouterClient } = await import('../src/jev/openrouter.js');
+    const { OPENROUTER_MODELS } = await import('../src/bench/strategies.js');
+    for (const [name, model] of Object.entries(OPENROUTER_MODELS)) {
+      out.push({
+        name: name.replace(/^or-/, ''),
+        client: new OpenRouterClient({ model, keepFullLog: false, sessionId: 'probe-rounding' }),
+      });
+    }
+    return out;
+  }
+
   if (process.env.TYPESAFE_API_KEY) {
     const { DirectJevClient } = await import('../src/jev/direct.js');
     out.push({ name: 'jev', client: new DirectJevClient({ keepFullLog: false }) });
@@ -88,6 +108,8 @@ for (const { name, client } of backends) {
   const nonZero: number[] = [];
   const offered: number[] = [];
   const massKept: number[] = [];
+  const topShare: number[] = [];
+  const atFloor: number[] = [];
   let failures = 0;
 
   for (const view of positions) {
@@ -117,6 +139,14 @@ for (const { name, client } of backends) {
       maxDecimals.push(Math.max(...values.map(decimalsUsed)));
       nonZero.push(values.filter((v) => v > 0).length);
       massKept.push(values.reduce((a, b) => a + b, 0));
+      // How much of the distribution the single best option carries, and how
+      // many options sit on the smallest step the rounding can express. A
+      // backend can keep nearly all the mass and still be unable to order the
+      // tail, which looks like an empty heatmap without being lost mass.
+      topShare.push(Math.max(...values));
+      const positive = values.filter((v) => v > 0);
+      const floor = positive.length ? Math.min(...positive) : 0;
+      atFloor.push(positive.filter((v) => v === floor).length);
     } catch (error) {
       failures++;
       if (failures <= 2) {
@@ -134,11 +164,13 @@ for (const { name, client } of backends) {
     nonZero.length ? avg(nonZero).toFixed(1) : '-',
     nonZero.length ? `${((avg(nonZero) / avg(offered)) * 100).toFixed(0)}%` : '-',
     massKept.length ? avg(massKept).toFixed(3) : '-',
+    topShare.length ? avg(topShare).toFixed(2) : '-',
+    atFloor.length ? avg(atFloor).toFixed(1) : '-',
     String(failures),
   ]);
 }
 
-const head = ['backend', 'n', 'options', 'max dp', 'non-zero', 'share', 'mass', 'fail'];
+const head = ['backend', 'n', 'options', 'max dp', 'non-zero', 'share', 'mass', 'top', 'at floor', 'fail'];
 const w = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]!.length)));
 const line = (c: string[]) => c.map((x, i) => (i === 0 ? x.padEnd(w[i]!) : x.padStart(w[i]!))).join('  ');
 console.log(line(head));
@@ -148,6 +180,11 @@ for (const r of rows) console.log(line(r));
 console.log(
   '\nmax dp   the most decimal places seen in any returned probability.\n' +
     '         2 means the backend rounds to two decimals, as Jev documents.\n' +
+    'top      probability carried by the single best option.\n' +
+    'at floor non-zero options sitting on the smallest step the rounding can\n' +
+    '         express. A backend can keep nearly all the mass and still be unable\n' +
+    '         to rank the tail, which renders as an empty heatmap without any\n' +
+    '         mass having been lost.\n' +
     'non-zero how many options came back above zero, of the options offered.\n' +
     'mass     the returned probabilities summed; well under 1 means rounding\n' +
     '         discarded real distribution rather than it being concentrated.',
