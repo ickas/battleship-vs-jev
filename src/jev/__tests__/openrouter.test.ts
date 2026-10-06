@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   describeOpenRouterError,
+  isRetryableStatus,
   isWorkersAiServed,
   OpenRouterClient,
 } from '../openrouter.js';
@@ -108,7 +109,9 @@ describe('OpenRouterClient', () => {
   });
 
   it('counts a failure and still logs the call', async () => {
-    const { client: c } = client({ error: { code: 429, message: 'Rate limit exceeded' } }, 429);
+    const { client: c } = client({ error: { code: 429, message: 'Rate limit exceeded' } }, 429, {
+      retries: 0,
+    });
     await expect(c.ask(request)).rejects.toThrow(/429/);
     expect(c.stats.failures).toBe(1);
     expect(c.log.at(-1)?.error).toMatch(/rate limit/i);
@@ -152,5 +155,85 @@ describe('isWorkersAiServed', () => {
 
   it('does not flag Jev, which TypeSafe serves itself', () => {
     expect(isWorkersAiServed('typesafe/jev-1.13')).toBe(false);
+  });
+});
+
+describe('transient failure handling', () => {
+  /** Fails with `status` the given number of times, then succeeds. */
+  function flakyClient(status: number, failures: number) {
+    let n = 0;
+    const fetchImpl = vi.fn(async (_url: string, _init: RequestInit) => {
+      if (n++ < failures) {
+        return reply({ error: { code: status, message: 'Clef inference failed' } }, status);
+      }
+      return reply(CHOICE_PAYLOAD, 200);
+    });
+    return {
+      fetchImpl,
+      client: new OpenRouterClient({
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        backoffMs: 1,
+      }),
+    };
+  }
+
+  it('retries a 529, the status Workers AI returned during the probe', async () => {
+    const { client: c, fetchImpl } = flakyClient(529, 2);
+    const res = await c.ask(request);
+    expect(res.answers.target).toMatchObject({ choice: 'B6' });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(res.attempts).toBe(3);
+  });
+
+  it('reports backoff separately so it cannot inflate the latency figure', async () => {
+    const { client: c } = flakyClient(529, 1);
+    const res = await c.ask(request);
+    // One backoff of backoffMs=1 happened, and it is not inside latencyMs.
+    expect(res.retryWaitMs).toBe(1);
+    expect(res.latencyMs).toBeLessThan(50);
+  });
+
+  it('gives up after the configured number of retries', async () => {
+    const fetchImpl = vi.fn(async (_url: string, _init: RequestInit) =>
+      reply({ error: { message: 'still failing' } }, 503),
+    );
+    const c = new OpenRouterClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      retries: 2,
+      backoffMs: 1,
+    });
+    await expect(c.ask(request)).rejects.toThrow(/503/);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not retry a 402, which is not transient', async () => {
+    const fetchImpl = vi.fn(async (_url: string, _init: RequestInit) =>
+      reply({ error: { code: 402, message: 'Insufficient credits.' } }, 402),
+    );
+    const c = new OpenRouterClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      backoffMs: 1,
+    });
+    await expect(c.ask(request)).rejects.toThrow(/out of credits/);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry a 400, which would fail identically every time', async () => {
+    const fetchImpl = vi.fn(async (_url: string, _init: RequestInit) =>
+      reply({ error: { code: 400, message: 'Invalid request parameters' } }, 400),
+    );
+    const c = new OpenRouterClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      backoffMs: 1,
+    });
+    await expect(c.ask(request)).rejects.toThrow(/400/);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('isRetryableStatus', () => {
+  it('covers the transient statuses and excludes the permanent ones', () => {
+    for (const s of [429, 500, 502, 503, 524, 529]) expect(isRetryableStatus(s)).toBe(true);
+    for (const s of [400, 401, 402, 403, 404, 413]) expect(isRetryableStatus(s)).toBe(false);
   });
 });

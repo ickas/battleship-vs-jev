@@ -67,6 +67,36 @@ export function isWorkersAiServed(model: string): boolean {
   return model.startsWith('cloudflare/');
 }
 
+/** Carries the HTTP status so retry decisions never have to parse a message. */
+export class DecisionsHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'DecisionsHttpError';
+  }
+}
+
+/**
+ * Statuses worth trying again.
+ *
+ * 529 is here because the truncation probe drew one on 20 Clef calls: Workers
+ * AI returned `AiError: Clef inference failed`, which is transient and
+ * model-side rather than anything wrong with the request. At that rate a
+ * 60-game jevPure run of roughly 5,000 calls would hit it a few hundred times,
+ * so a run without retry would be measuring Cloudflare's error rate as if it
+ * were the model's judgement.
+ *
+ * 402 is deliberately absent: out of credits is not transient, and retrying it
+ * just burns the clock.
+ */
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 524, 529]);
+
+export function isRetryableStatus(status: number): boolean {
+  return RETRYABLE_STATUSES.has(status);
+}
+
 export interface OpenRouterClientOptions {
   model?: OpenRouterDecisionModel;
   apiKey?: string;
@@ -79,6 +109,10 @@ export interface OpenRouterClientOptions {
   maxLogEntries?: number;
   minIntervalMs?: number;
   timeoutMs?: number;
+  /** Attempts after the first, for transient failures. */
+  retries?: number;
+  /** First backoff step; doubles per attempt. */
+  backoffMs?: number;
   onCall?: (log: JevCallLog) => void;
 }
 
@@ -92,6 +126,8 @@ export class OpenRouterClient implements JevClient {
   private readonly maxLogEntries: number;
   private readonly minIntervalMs: number;
   private readonly timeoutMs: number;
+  private readonly retries: number;
+  private readonly backoffMs: number;
   private readonly onCall?: (log: JevCallLog) => void;
   private readonly calls: JevCallLog[] = [];
 
@@ -127,6 +163,8 @@ export class OpenRouterClient implements JevClient {
     this.maxLogEntries = options.maxLogEntries ?? 500;
     this.minIntervalMs = options.minIntervalMs ?? 0;
     this.timeoutMs = options.timeoutMs ?? 60_000;
+    this.retries = options.retries ?? 3;
+    this.backoffMs = options.backoffMs ?? 500;
     this.onCall = options.onCall;
   }
 
@@ -152,25 +190,31 @@ export class OpenRouterClient implements JevClient {
       };
       if (this.sessionId) body.session_id = this.sessionId;
 
-      const timeout = AbortSignal.timeout(this.timeoutMs);
-      const signal = request.abortSignal
-        ? AbortSignal.any([request.abortSignal, timeout])
-        : timeout;
+      const { payload, latencyMs, attempts, retryWaitMs } = await this.withRetry(
+        request.abortSignal,
+        async () => {
+          const timeout = AbortSignal.timeout(this.timeoutMs);
+          const signal = request.abortSignal
+            ? AbortSignal.any([request.abortSignal, timeout])
+            : timeout;
 
-      const res = await this.fetchImpl(this.baseUrl, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${this.apiKey}`,
-          'content-type': 'application/json',
+          const res = await this.fetchImpl(this.baseUrl, {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${this.apiKey}`,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify(body),
+            signal,
+          });
+
+          const parsed = (await res.json()) as Record<string, unknown>;
+          if (!res.ok) {
+            throw new DecisionsHttpError(res.status, describeOpenRouterError(res.status, parsed));
+          }
+          return parsed;
         },
-        body: JSON.stringify(body),
-        signal,
-      });
-
-      const latencyMs = performance.now() - start;
-      const payload = (await res.json()) as Record<string, unknown>;
-
-      if (!res.ok) throw new Error(describeOpenRouterError(res.status, payload));
+      );
 
       const { answers, confidence } = fromSystemOneAnswers(
         (payload.answers ?? {}) as Record<string, unknown>,
@@ -199,8 +243,8 @@ export class OpenRouterClient implements JevClient {
         // Measured, not derived from a hardcoded rate.
         billedCostUsd: rawUsage?.cost,
         latencyMs,
-        attempts: 1,
-        retryWaitMs: 0,
+        attempts,
+        retryWaitMs,
       };
 
       this.record({
@@ -216,6 +260,7 @@ export class OpenRouterClient implements JevClient {
       this.stats.inputTokens += usage.inputTokens ?? 0;
       this.stats.outputTokens += usage.outputTokens ?? 0;
       this.stats.totalLatencyMs += latencyMs;
+      this.stats.retryWaitMs += retryWaitMs;
       this.stats.billedCostUsd += rawUsage?.cost ?? 0;
 
       return response;
@@ -236,6 +281,61 @@ export class OpenRouterClient implements JevClient {
 
       throw error;
     }
+  }
+
+  /**
+   * Retries transient failures, timing each attempt on its own.
+   *
+   * The separate timing is the point. An earlier version of the Gateway client
+   * measured from the first attempt, so a single backoff added seconds to a
+   * figure labelled end-to-end latency. Latency here is the successful
+   * attempt; the waiting is reported beside it as `retryWaitMs` so a slow run
+   * cannot quietly become a slow model.
+   */
+  private async withRetry(
+    abortSignal: AbortSignal | undefined,
+    call: () => Promise<Record<string, unknown>>,
+  ): Promise<{
+    payload: Record<string, unknown>;
+    latencyMs: number;
+    attempts: number;
+    retryWaitMs: number;
+  }> {
+    let lastError: unknown;
+    let retryWaitMs = 0;
+
+    for (let attempt = 0; attempt <= this.retries; attempt++) {
+      const attemptStart = performance.now();
+      try {
+        const payload = await call();
+        return {
+          payload,
+          latencyMs: performance.now() - attemptStart,
+          attempts: attempt + 1,
+          retryWaitMs,
+        };
+      } catch (error) {
+        lastError = error;
+        const retryable =
+          error instanceof DecisionsHttpError && isRetryableStatus(error.status);
+        if (!retryable || attempt === this.retries) throw error;
+
+        const wait = this.backoffMs * 2 ** attempt;
+        retryWaitMs += wait;
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(resolve, wait);
+          abortSignal?.addEventListener(
+            'abort',
+            () => {
+              clearTimeout(timer);
+              reject(abortSignal.reason);
+            },
+            { once: true },
+          );
+        });
+      }
+    }
+    throw lastError;
   }
 
   private async pace(abortSignal?: AbortSignal): Promise<void> {
