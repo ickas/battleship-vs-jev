@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  DecisionsHttpError,
   describeOpenRouterError,
+  isRetryableError,
   isRetryableStatus,
   isWorkersAiServed,
   OpenRouterClient,
@@ -235,5 +237,58 @@ describe('isRetryableStatus', () => {
   it('covers the transient statuses and excludes the permanent ones', () => {
     for (const s of [429, 500, 502, 503, 524, 529]) expect(isRetryableStatus(s)).toBe(true);
     for (const s of [400, 401, 402, 403, 404, 413]) expect(isRetryableStatus(s)).toBe(false);
+  });
+});
+
+describe('isRetryableError', () => {
+  it('retries a stalled attempt, which took four games off the first run', () => {
+    const timeout = Object.assign(new Error('The operation was aborted due to timeout'), {
+      name: 'TimeoutError',
+    });
+    expect(isRetryableError(timeout, false)).toBe(true);
+
+    const abort = Object.assign(new Error('aborted'), { name: 'AbortError' });
+    expect(isRetryableError(abort, false)).toBe(true);
+  });
+
+  it('retries a dropped connection', () => {
+    expect(isRetryableError(new TypeError('fetch failed'), false)).toBe(true);
+  });
+
+  it('never retries once the caller has aborted', () => {
+    const timeout = Object.assign(new Error('timeout'), { name: 'TimeoutError' });
+    expect(isRetryableError(timeout, true)).toBe(false);
+    expect(isRetryableError(new DecisionsHttpError(529, 'transient'), true)).toBe(false);
+  });
+
+  it('still distinguishes retryable statuses from permanent ones', () => {
+    expect(isRetryableError(new DecisionsHttpError(529, 'x'), false)).toBe(true);
+    expect(isRetryableError(new DecisionsHttpError(400, 'x'), false)).toBe(false);
+  });
+
+  it('does not retry an ordinary bug', () => {
+    expect(isRetryableError(new TypeError('x is not a function'), false)).toBe(false);
+    expect(isRetryableError(new Error('something else'), false)).toBe(false);
+  });
+});
+
+describe('retrying non-HTTP failures end to end', () => {
+  it('recovers a game from a timeout instead of losing it', async () => {
+    let n = 0;
+    const fetchImpl = vi.fn(async (_url: string, _init: RequestInit) => {
+      if (n++ === 0) {
+        throw Object.assign(new Error('The operation was aborted due to timeout'), {
+          name: 'TimeoutError',
+        });
+      }
+      return reply(CHOICE_PAYLOAD, 200);
+    });
+    const c = new OpenRouterClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      backoffMs: 1,
+    });
+    const res = await c.ask(request);
+    expect(res.answers.target).toMatchObject({ choice: 'B6' });
+    expect(res.attempts).toBe(2);
   });
 });

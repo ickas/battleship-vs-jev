@@ -97,6 +97,34 @@ export function isRetryableStatus(status: number): boolean {
   return RETRYABLE_STATUSES.has(status);
 }
 
+/**
+ * Whether a thrown error is worth another attempt.
+ *
+ * Status codes are only part of it. The first four-run benchmark lost four
+ * games to `The operation was aborted due to timeout` and one `fetch failed`,
+ * neither of which carries an HTTP status, so neither was retried and each took
+ * a whole game down with it. That turned two 60-game runs into 58-game runs and
+ * cost the pairing.
+ *
+ * A caller-initiated abort is deliberate and must never be retried, which is
+ * why the caller's signal is checked before the error is classified.
+ */
+export function isRetryableError(error: unknown, callerAborted: boolean): boolean {
+  if (callerAborted) return false;
+  if (error instanceof DecisionsHttpError) return isRetryableStatus(error.status);
+
+  // The request timeout surfaces as TimeoutError, or as AbortError on older
+  // runtimes. Both mean the attempt stalled rather than that it was refused.
+  const name = (error as { name?: unknown } | null)?.name;
+  if (name === 'TimeoutError' || name === 'AbortError') return true;
+
+  // undici reports a dropped connection or DNS failure as a plain TypeError
+  // with the message `fetch failed`, with the detail on `cause`.
+  if (error instanceof TypeError && /fetch failed/i.test(error.message)) return true;
+
+  return false;
+}
+
 export interface OpenRouterClientOptions {
   model?: OpenRouterDecisionModel;
   apiKey?: string;
@@ -316,9 +344,8 @@ export class OpenRouterClient implements JevClient {
         };
       } catch (error) {
         lastError = error;
-        const retryable =
-          error instanceof DecisionsHttpError && isRetryableStatus(error.status);
-        if (!retryable || attempt === this.retries) throw error;
+        if (!isRetryableError(error, abortSignal?.aborted ?? false)) throw error;
+        if (attempt === this.retries) throw error;
 
         const wait = this.backoffMs * 2 ** attempt;
         retryWaitMs += wait;
