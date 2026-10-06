@@ -5,6 +5,7 @@ import {
   isRetryableError,
   isRetryableStatus,
   isWorkersAiServed,
+  parseRetryAfter,
   OpenRouterClient,
 } from '../openrouter.js';
 
@@ -290,5 +291,57 @@ describe('retrying non-HTTP failures end to end', () => {
     const res = await c.ask(request);
     expect(res.answers.target).toMatchObject({ choice: 'B6' });
     expect(res.attempts).toBe(2);
+  });
+});
+
+describe('rate-limit backoff', () => {
+  it('parses Retry-After as seconds and as a date', () => {
+    expect(parseRetryAfter('30')).toBe(30_000);
+    expect(parseRetryAfter(null)).toBeUndefined();
+    expect(parseRetryAfter('not a date')).toBeUndefined();
+    const soon = new Date(Date.now() + 5_000).toUTCString();
+    expect(parseRetryAfter(soon)).toBeGreaterThan(3_000);
+  });
+
+  it('waits far longer for a 429 than for a generic failure', async () => {
+    function clientFor(status: number) {
+      let n = 0;
+      const fetchImpl = vi.fn(async (_url: string, _init: RequestInit) => {
+        if (n++ === 0) return reply({ error: { message: 'nope' } }, status);
+        return reply(CHOICE_PAYLOAD, 200);
+      });
+      return new OpenRouterClient({
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        backoffMs: 1,
+        rateLimitBackoffMs: 40,
+      });
+    }
+    const limited = await clientFor(429).ask(request);
+    const generic = await clientFor(503).ask(request);
+    // Cloudflare's limit is per minute, so a 429 must not be retried as if it
+    // were a transient blip.
+    expect(limited.retryWaitMs).toBe(40);
+    expect(generic.retryWaitMs).toBe(1);
+  });
+
+  it('honours an explicit Retry-After over its own ladder', async () => {
+    let n = 0;
+    const fetchImpl = vi.fn(async (_url: string, _init: RequestInit) => {
+      if (n++ === 0) {
+        return {
+          ok: false,
+          status: 429,
+          headers: { get: (h: string) => (h === 'retry-after' ? '0.05' : null) },
+          json: async () => ({ error: { message: 'slow down' } }),
+        } as unknown as Response;
+      }
+      return reply(CHOICE_PAYLOAD, 200);
+    });
+    const c = new OpenRouterClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      rateLimitBackoffMs: 30_000,
+    });
+    const res = await c.ask(request);
+    expect(res.retryWaitMs).toBe(50);
   });
 });

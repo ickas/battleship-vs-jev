@@ -72,10 +72,25 @@ export class DecisionsHttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** From a Retry-After header, when the server sent one. */
+    readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = 'DecisionsHttpError';
   }
+}
+
+/**
+ * Retry-After is either seconds or an HTTP date. Returns undefined when absent
+ * or unparseable, so the caller falls back to its own backoff.
+ */
+export function parseRetryAfter(value: string | null | undefined): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(value);
+  if (Number.isNaN(date)) return undefined;
+  return Math.max(0, date - Date.now());
 }
 
 /**
@@ -141,6 +156,13 @@ export interface OpenRouterClientOptions {
   retries?: number;
   /** First backoff step; doubles per attempt. */
   backoffMs?: number;
+  /**
+   * First backoff step for a 429. Separate because Cloudflare's limit is
+   * "inference requests per minute": a 0.5s step exhausts every retry inside
+   * four seconds and the game dies while the window has barely moved. A
+   * 60-game jevPure run lost 21 games that way.
+   */
+  rateLimitBackoffMs?: number;
   onCall?: (log: JevCallLog) => void;
 }
 
@@ -156,6 +178,7 @@ export class OpenRouterClient implements JevClient {
   private readonly timeoutMs: number;
   private readonly retries: number;
   private readonly backoffMs: number;
+  private readonly rateLimitBackoffMs: number;
   private readonly onCall?: (log: JevCallLog) => void;
   private readonly calls: JevCallLog[] = [];
 
@@ -191,8 +214,9 @@ export class OpenRouterClient implements JevClient {
     this.maxLogEntries = options.maxLogEntries ?? 500;
     this.minIntervalMs = options.minIntervalMs ?? 0;
     this.timeoutMs = options.timeoutMs ?? 60_000;
-    this.retries = options.retries ?? 3;
+    this.retries = options.retries ?? 5;
     this.backoffMs = options.backoffMs ?? 500;
+    this.rateLimitBackoffMs = options.rateLimitBackoffMs ?? 8_000;
     this.onCall = options.onCall;
   }
 
@@ -238,7 +262,11 @@ export class OpenRouterClient implements JevClient {
 
           const parsed = (await res.json()) as Record<string, unknown>;
           if (!res.ok) {
-            throw new DecisionsHttpError(res.status, describeOpenRouterError(res.status, parsed));
+            throw new DecisionsHttpError(
+              res.status,
+              describeOpenRouterError(res.status, parsed),
+              parseRetryAfter(res.headers?.get?.('retry-after')),
+            );
           }
           return parsed;
         },
@@ -347,7 +375,12 @@ export class OpenRouterClient implements JevClient {
         if (!isRetryableError(error, abortSignal?.aborted ?? false)) throw error;
         if (attempt === this.retries) throw error;
 
-        const wait = this.backoffMs * 2 ** attempt;
+        // The server's own Retry-After wins; otherwise a rate limit gets the
+        // long ladder and everything else the short one.
+        const isRateLimit = error instanceof DecisionsHttpError && error.status === 429;
+        const base = isRateLimit ? this.rateLimitBackoffMs : this.backoffMs;
+        const hinted = error instanceof DecisionsHttpError ? error.retryAfterMs : undefined;
+        const wait = hinted ?? base * 2 ** attempt;
         retryWaitMs += wait;
         await new Promise((resolve, reject) => {
           const timer = setTimeout(resolve, wait);
