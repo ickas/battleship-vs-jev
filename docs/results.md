@@ -36,9 +36,16 @@ heuristic, by **33.6 shots**, and lost on 59 of 60 layouts.
 
 Two documented traits explain it. Every option is labelled identically, so all
 the signal sits in a 3,000-character state the model must parse unaided; and
-probabilities come back rounded to two decimals, so spread across ~90 options
-most of the distribution collapses to zero. It cost **$0.65** to finish barely
-ahead of random.
+probabilities come back rounded to two decimals, so across ~90 options the model
+can only express a usable ranking over about a dozen cells. It cost **$0.65** to
+finish barely ahead of random.
+
+> **Correction (2026-10-06).** This paragraph previously said that most of the
+> distribution collapses to zero. That is wrong: the mass is retained (0.996 of
+> 1.0) and about 45 of 90 options come back non-zero. What collapses is the
+> ordering of the tail — roughly 33 of those 45 are tied on the 0.01 floor — so
+> the conclusion that very little signal is usable stands, but the mechanism
+> given for it did not. Measured in `results-clef.md`.
 
 ### jevHybrid: as good as the code baseline, not better
 
