@@ -41,6 +41,26 @@ interface Backend {
 const RESULTS_DIR = 'results';
 
 /**
+ * Compact, unambiguous names for the table.
+ *
+ * The first version truncated to a fixed width, which rendered
+ * `cloudflare/clef` and `cloudflare/clef-flash` as the same string and made
+ * two different comparisons impossible to tell apart.
+ */
+function shortLabel(strategyId: string, modelId: string): string {
+  const strategy = strategyId
+    .replace(/^jevHybrid.*/, 'hybrid')
+    .replace(/^jevPure.*/, 'pure')
+    .replace(/^huntTarget$/, 'hunt');
+  const model = modelId
+    .replace(/^cloudflare\//, '')
+    .replace(/^typesafe\//, '')
+    .replace(/^jev-.*/, 'jev')
+    .replace(/^code-only$/, 'code');
+  return `${strategy}/${model}`;
+}
+
+/**
  * One candidate per (player, file). Choosing the winner per player has to
  * happen after every file is read, not while reading: picking "newest file
  * wins" as it goes let a later 2-game spot check overwrite the complete
@@ -133,8 +153,8 @@ backends.sort((x, y) => order(x) - order(y));
 
 console.log('All runs below are the mixed layout family, seed 1000, 60 games.\n');
 console.log('SCOREBOARD (lower is better)\n');
-console.log('player                                  n   mean  median     sd    cost');
-console.log('-'.repeat(74));
+console.log('player                 n   mean  median     sd      cost');
+console.log('-'.repeat(58));
 for (const b of backends) {
   const shots = [...b.bySeed.values()].map((r) => r.shotCount).sort((p, q) => p - q);
   const n = shots.length;
@@ -143,7 +163,7 @@ for (const b of backends) {
   const med = n % 2 ? shots[(n - 1) / 2]! : (shots[n / 2 - 1]! + shots[n / 2]!) / 2;
   const cost = b.costUsd > 0 ? `$${b.costUsd.toFixed(4)}${b.costIsEstimated ? '*' : ''}` : '-';
   console.log(
-    b.label.padEnd(38),
+    shortLabel(b.strategyId, b.modelId).padEnd(20),
     String(n).padStart(3),
     m.toFixed(1).padStart(6),
     med.toFixed(1).padStart(7),
@@ -155,11 +175,18 @@ console.log('\n* estimated from a published rate rather than billed.');
 
 console.log('\n\nPAIRED COMPARISONS\n');
 console.log(
-  'A vs B                                               n   diff        95% CI        p   wins  verdict',
+  'A                  B                    n   diff        95% CI         p    wins  verdict',
 );
-console.log('-'.repeat(104));
+console.log('-'.repeat(100));
 
 const inconclusive: string[] = [];
+const nominalOnly: string[] = [];
+// Every pair is tested, so the chance of at least one spurious "win" at
+// alpha = 0.05 is high. Bonferroni is conservative but it is the honest floor,
+// and a result that only clears the uncorrected threshold is reported as such
+// rather than as a finding.
+const comparisons = (backends.length * (backends.length - 1)) / 2;
+const bonferroni = 0.05 / comparisons;
 
 for (let i = 0; i < backends.length; i++) {
   for (let j = i + 1; j < backends.length; j++) {
@@ -178,12 +205,14 @@ for (let i = 0; i < backends.length; i++) {
 
     // A result is only called a win when the interval excludes zero. Anything
     // else is a tie, however suggestive the means look.
-    const verdict =
-      r.p < 0.05 && r.ci95[0] * r.ci95[1] > 0
-        ? r.meanDiff < 0
-          ? 'A wins'
-          : 'B wins'
-        : 'TIE';
+    const passes = r.p < 0.05 && r.ci95[0] * r.ci95[1] > 0;
+    const verdict = passes ? (r.meanDiff < 0 ? 'A wins' : 'B wins') : 'TIE';
+    if (passes && r.p >= bonferroni) {
+      nominalOnly.push(
+        `${shortLabel(a.strategyId, a.modelId)} vs ${shortLabel(b.strategyId, b.modelId)}: ` +
+          `p = ${r.p.toFixed(4)}, above the corrected threshold of ${bonferroni.toFixed(4)}`,
+      );
+    }
     if (verdict === 'TIE') {
       inconclusive.push(
         `${a.label} vs ${b.label}: gap ${Math.abs(r.meanDiff).toFixed(1)}, ` +
@@ -193,17 +222,33 @@ for (let i = 0; i < backends.length; i++) {
     }
 
     console.log(
-      `${a.label.split(' @ ')[0]}/${a.modelId}`.slice(0, 24).padEnd(25),
-      `${b.label.split(' @ ')[0]}/${b.modelId}`.slice(0, 24).padEnd(25),
+      shortLabel(a.strategyId, a.modelId).padEnd(18),
+      shortLabel(b.strategyId, b.modelId).padEnd(18),
       String(seeds.length).padStart(3),
       r.meanDiff.toFixed(1).padStart(6),
       `[${r.ci95[0].toFixed(1)}, ${r.ci95[1].toFixed(1)}]`.padStart(16),
       (r.p < 0.0001 ? r.p.toExponential(1) : r.p.toFixed(4)).padStart(9),
       `${r.winsA}/${decided}`.padStart(6),
       ` ${verdict}`,
-      verdict === 'TIE' ? `(sign p=${sign.toFixed(2)}, win rate ${(lo * 100).toFixed(0)}-${(hi * 100).toFixed(0)}%)` : '',
+      verdict === 'TIE'
+        ? `(sign p=${sign.toFixed(2)}, win rate ${(lo * 100).toFixed(0)}-${(hi * 100).toFixed(0)}%)`
+        : r.p >= bonferroni
+          ? '(nominal only)'
+          : '',
     );
   }
+}
+
+if (nominalOnly.length) {
+  console.log(
+    `\n\nSIGNIFICANT BEFORE CORRECTION, NOT AFTER\n\n` +
+      `${comparisons} pairs were tested, so the corrected threshold is ${bonferroni.toFixed(4)}.`,
+  );
+  for (const line of nominalOnly) console.log(`  ${line}`);
+  console.log(
+    '\nThese clear the uncorrected 5% bar and nothing more. Reporting one as a\n' +
+      'finding would be picking the comparison after seeing the data.',
+  );
 }
 
 if (inconclusive.length) {
