@@ -28,6 +28,27 @@ const flag = (name: string, fallback: string) => {
 };
 const CALLS = Number(flag('calls', '60'));
 const WARMUP = Number(flag('warmup', '3'));
+/**
+ * Options to offer. The default 4 is a small request; the two players this
+ * benchmark runs send about 16 (jevHybrid) and about 90 (jevPure), and latency
+ * is not independent of payload size, so a single figure taken at 4 options
+ * does not describe what either player actually waits for.
+ */
+const OPTIONS = Number(flag('options', '4'));
+
+/**
+ * Extra untried cells, labelled identically, to grow the request to a chosen
+ * size. Identical labels are what jevPure really sends: there is nothing
+ * honest to say that distinguishes one untried cell from another.
+ */
+function padding(count: number): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (let i = 0; i < count; i++) {
+    const row = String.fromCharCode(65 + Math.floor(i / 10));
+    out[`${row}${(i % 10) + 1}`] = 'A cell that has not been fired at yet.';
+  }
+  return out;
+}
 
 /** One fixed mid-game decision, identical for every backend. */
 const REQUEST: JevRequest = {
@@ -47,13 +68,44 @@ const REQUEST: JevRequest = {
         G8: 'directly continues 1 hit in a row right; has room for the longest ship still afloat',
         I8: 'directly continues 1 hit in a row left; has room for the longest ship still afloat',
         B4: 'is in completely unexplored space; is in the open middle of the board',
+        ...padding(OPTIONS - 4),
       },
     },
   },
 };
 
+/**
+ * OpenRouter first, and this is the whole reason the transport exists.
+ *
+ * Latency is only comparable across models when the route is identical.
+ * Timing Jev through the TypeSafe API against Clef through Workers AI would
+ * measure two networks, two queues and two regions as well as two models, and
+ * there would be no way to tell afterwards which difference was which. Routing
+ * all three through one endpoint leaves the model as the only thing that
+ * varies. The per-vendor clients stay as a fallback, but numbers taken that way
+ * are not comparable between models and should not be reported side by side.
+ */
 async function build(): Promise<Array<{ name: string; client: JevClient }>> {
   const out: Array<{ name: string; client: JevClient }> = [];
+
+  if (process.env.OPENROUTER_API_KEY) {
+    const { OpenRouterClient } = await import('../src/jev/openrouter.js');
+    const { OPENROUTER_MODELS } = await import('../src/bench/strategies.js');
+    for (const [name, model] of Object.entries(OPENROUTER_MODELS)) {
+      out.push({
+        name: name.replace(/^or-/, ''),
+        client: new OpenRouterClient({
+          model,
+          keepFullLog: false,
+          sessionId: 'measure-latency',
+          // A retry would hide a slow or failing call behind a fast one, and
+          // this script exists to measure exactly that.
+          retries: 0,
+        }),
+      });
+    }
+    return out;
+  }
 
   if (process.env.TYPESAFE_API_KEY) {
     const { DirectJevClient } = await import('../src/jev/direct.js');
