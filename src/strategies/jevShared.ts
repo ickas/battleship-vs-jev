@@ -107,9 +107,12 @@ export function decisionMetadata(response: JevResponse, questionId: string) {
     confidence: response.confidence[questionId],
     modelId: response.modelId,
     generationId: response.generationId,
-    // Prefer a cost the transport reported; fall back to the published rate.
-    marketCostUsd: response.marketCostUsd ?? response.estimatedCostUsd,
-    costIsEstimated: response.marketCostUsd === undefined,
+    // Three sources, in descending order of authority: what the call was
+    // actually billed, what the transport reported it would cost at list price,
+    // and the published rate applied to reported usage. Only the last is a
+    // guess, so only the last sets costIsEstimated.
+    marketCostUsd: response.billedCostUsd ?? response.marketCostUsd ?? response.estimatedCostUsd,
+    costIsEstimated: response.billedCostUsd === undefined && response.marketCostUsd === undefined,
     attempts: response.attempts,
     retryWaitMs: response.retryWaitMs,
   };

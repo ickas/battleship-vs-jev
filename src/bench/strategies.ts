@@ -2,6 +2,7 @@ import { ClefClient } from '../jev/clef.js';
 import { DirectJevClient } from '../jev/direct.js';
 import { GatewayJevClient } from '../jev/gateway.js';
 import { MockJevClient } from '../jev/mock.js';
+import { OpenRouterClient } from '../jev/openrouter.js';
 import type { JevClient } from '../jev/types.js';
 import { DensityStrategy } from '../strategies/density.js';
 import { HuntTargetStrategy } from '../strategies/huntTarget.js';
@@ -44,10 +45,45 @@ export function strategyUsesModel(id: string): boolean {
   return id === 'jevPure' || id === 'jevHybrid';
 }
 
-/** How a runner reaches Jev. */
-export type Transport = 'gateway' | 'direct' | 'clef' | 'clef-flash' | 'mock';
+/** How a runner reaches a decision model. */
+export type Transport =
+  | 'gateway'
+  | 'direct'
+  | 'clef'
+  | 'clef-flash'
+  | 'or-jev'
+  | 'or-clef'
+  | 'or-clef-flash'
+  | 'mock';
 
-export const TRANSPORTS: Transport[] = ['gateway', 'direct', 'clef', 'clef-flash', 'mock'];
+export const TRANSPORTS: Transport[] = [
+  'gateway',
+  'direct',
+  'clef',
+  'clef-flash',
+  'or-jev',
+  'or-clef',
+  'or-clef-flash',
+  'mock',
+];
+
+/**
+ * The OpenRouter slugs behind the `or-*` transports.
+ *
+ * These three are the ones the cross-model comparison uses, because routing
+ * every model through one endpoint is what keeps the latency figures
+ * comparable. Reaching Jev through the Gateway and Clef through Workers AI
+ * would measure two transports as well as two models.
+ */
+export const OPENROUTER_MODELS = {
+  'or-jev': 'typesafe/jev-1.13',
+  'or-clef': 'cloudflare/clef',
+  'or-clef-flash': 'cloudflare/clef-flash',
+} as const satisfies Record<string, string>;
+
+export function isOpenRouterTransport(t: Transport): t is keyof typeof OPENROUTER_MODELS {
+  return t in OPENROUTER_MODELS;
+}
 
 export interface ClientOptions {
   transport?: Transport;
@@ -57,6 +93,8 @@ export interface ClientOptions {
   rateLimitRetries?: number;
   /** Model to request on the direct transport. A concrete version pins it. */
   model?: string;
+  /** Groups one benchmark run in OpenRouter's logs. */
+  sessionId?: string;
 }
 
 /**
@@ -74,6 +112,21 @@ export function buildClient(options: ClientOptions = {}): JevClient {
   const transport = options.transport ?? 'gateway';
 
   if (transport === 'mock') return new MockJevClient();
+
+  if (isOpenRouterTransport(transport)) {
+    if (!process.env.OPENROUTER_API_KEY) {
+      throw new Error(
+        `--transport ${transport} needs OPENROUTER_API_KEY. Get one at ` +
+          'https://openrouter.ai/keys and put it in .env.local.',
+      );
+    }
+    return new OpenRouterClient({
+      model: options.model ?? OPENROUTER_MODELS[transport],
+      keepFullLog: options.keepFullLog ?? false,
+      minIntervalMs: options.minIntervalMs ?? 0,
+      ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+    });
+  }
 
   if (transport === 'clef' || transport === 'clef-flash') {
     if (!process.env.CLOUDFLARE_ACCOUNT_ID || !process.env.CLOUDFLARE_API_TOKEN) {
